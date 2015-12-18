@@ -1721,7 +1721,7 @@ parseCmd(clientData, interp, objc, objv)
         if (nCount==100){
             Tcl_ResetResult(interp);
             Tcl_AppendResult(interp, "infinite loop: "
-                "caused by node-handler calling [reset], [parse].", 0
+                "caused by node-handler calling [reset], [parse].", NULL
             );
             return TCL_ERROR;
         }
