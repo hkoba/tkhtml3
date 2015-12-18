@@ -293,8 +293,8 @@ proc _TAG {args} {
 # Open the files htmltokens.c and htmltokens.h for writing. Write a
 # warning to the top of each that they are generated files.
 #
-set c_file [open htmltokens.c w]
-set h_file [open htmltokens.h w]
+set c_file [open [file dirname [info script]]/htmltokens.c w]
+set h_file [open [file dirname [info script]]/htmltokens.h w]
 set warning {
 /* 
  * DO NOT EDIT!
