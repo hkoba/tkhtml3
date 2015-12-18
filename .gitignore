@@ -1,0 +1,12 @@
+/Makefile
+/config.log
+/config.status
+/cssprop.c
+/cssprop.h
+/htmldefaultstyle.c
+/htmltokens.h
+/hv3-0.1.tm
+/tkhtml.n
+*.o
+*.so
+pkgIndex.tcl
