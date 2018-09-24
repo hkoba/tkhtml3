@@ -141,7 +141,7 @@ proc parse_stylesheet {stylesheet_text} {
   html .newwidget -defaultstyle ""
   .newwidget style $stylesheet_text
   set ret [list]
-  foreach r [.newwidget styleconfig] {
+  foreach r [.newwidget _styleconfig] {
     lappend ret [lrange $r 0 1]
   }
   destroy .newwidget
