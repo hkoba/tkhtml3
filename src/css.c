@@ -3331,7 +3331,8 @@ ruleToPropertyValues(p, aPropDone, pRule)
  *---------------------------------------------------------------------------
  */
 static void 
-overrideToPropertyValues(p, aPropDone, pOverride)
+overrideToPropertyValues(pTree, p, aPropDone, pOverride)
+    HtmlTree *pTree;
     HtmlComputedValuesCreator *p;
     int *aPropDone;
     Tcl_Obj *pOverride;
@@ -3350,6 +3351,13 @@ overrideToPropertyValues(p, aPropDone, pOverride)
 
         zProp = Tcl_GetStringFromObj(apObj[ii], &nProp);
         eProp = HtmlCssPropertyLookup(nProp, zProp);
+
+        if (eProp < 0) {
+          LOG {
+            HtmlLog(pTree, "override: wrong css prop: %s", zProp);
+          }
+          continue;
+        }
 
 	if (eProp <= CSS_PROPERTY_MAX_PROPERTY && 0 == aPropDone[eProp]) {
             const char *zVal = Tcl_GetString(apObj[ii + 1]);
@@ -3569,7 +3577,7 @@ HtmlCssStyleSheetApply(pTree, pNode)
      * These properties were set directly by the script and have a higher
      * priority than anything else.
      */
-    overrideToPropertyValues(&sCreator, aPropDone, pElem->pOverride);
+    overrideToPropertyValues(pTree, &sCreator, aPropDone, pElem->pOverride);
 
     /* Loop through the list of CSS rules in the stylesheet. Rules that occur
      * earlier in the list have a higher priority than those that occur later.
