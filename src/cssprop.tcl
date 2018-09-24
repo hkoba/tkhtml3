@@ -419,7 +419,8 @@ CodeLookup HtmlCssConstant $constant_map  100
 CodeLookup HtmlCssProperty $property_map  0
 
 set max_constant [expr [llength $constant_map] + 100 - 1]
-set max_property [expr [llength [lsort -unique $properties]] - 1]
+set max_property [expr [llength [lsort -unique $properties]] \
+                      + [llength [lsort -unique $shortcut_properties]] - 1]
 
 append ::cssprop_h "#define CSS_CONST_MIN_CONSTANT 100\n"
 append ::cssprop_h "#define CSS_PROPERTY_MIN_PROPERTY 0\n"
