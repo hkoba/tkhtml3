@@ -499,8 +499,8 @@ INSTRUMENTED(callbackHandler, HTML_INSTRUMENT_CALLBACK)
         pTree->cb.pRestyle==pTree->pRoot
     );
 
-    while( pTree->cb.inProgress ) {
-	usleep( 2000 );
+    if ( pTree->cb.inProgress ) {
+      return;
     }
     
     HtmlCheckRestylePoint(pTree);
