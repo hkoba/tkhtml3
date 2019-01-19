@@ -1,0 +1,75 @@
+# -*- coding: utf-8; mode: tcl -*-
+
+#---------------------------------------------------------------------
+# This file contains automated tests for the Tkhtml GitHub issue #1.
+#
+
+if {![info exists ::env(DEBUG_TKHTML_SYSTEMWIDE)]
+    &&
+    [set libs [glob -directory [file dirname [file dirname [info script]]]\
+                   libTkhtml3*.so]] ne ""} {
+    puts "Loading [lindex $libs 0]..."
+    load [lindex $libs 0]
+}
+
+# Test script for Tkhtml
+proc sourcefile {file} {
+  set fname [file join [file dirname [info script]] $file] 
+  uplevel #0 [list source $fname]
+}
+sourcefile common.tcl
+
+set SW [apply {args {
+    foreach {pkg scrolled} $args {
+        if {![catch {package require $pkg}]} {
+            return $scrolled
+        }
+    }
+}} \
+            widget::scrolledwindow widget::scrolledwindow \
+            BWidget ScrolledWindow]
+if {$SW eq ""} {
+    return
+}
+
+$SW .sw
+set myHtml [html .sw.h]
+.sw setwidget $myHtml
+
+pack .sw -fill both -expand true
+
+#========================================
+
+set style {
+    div.span4 {
+        width: 300px;
+        min-height: 1px;
+        margin-left: 20px;
+    }
+}
+
+set html {
+    <div class=span4>
+    <h2>Heading</h2>
+    <p>Donec id elit non mi porta gravida at eget metus. Fusce dapibus, tellus ac cursus commodo, tortor mauris condimentum nibh, ut fermentum massa justo sit amet risus. Etiam porta sem malesuada magna mollis euismod. Donec sed odio dui. </p>
+    </div>
+}
+
+$myHtml style -id author.0001 $style
+$myHtml parse [string repeat $html 8]
+
+update
+$myHtml yview moveto 1
+update
+
+proc badact {} {
+    foreach n [$::myHtml search div.span4] {
+        $n override [list float left]
+    }
+
+    update
+
+    exit
+}
+
+after idle badact
