@@ -238,6 +238,7 @@ static int inputNextToken(pInput)
         case '@': eToken = CT_AT; break;
         case '!': eToken = CT_BANG; break;
         case '/': eToken = CT_SLASH; break;
+        case '^': eToken = CT_HAT; break;
 
         case '"': case '\'': {
             char delim = z[0];
@@ -686,10 +687,14 @@ static int parseSelector(pInput, pParse)
                     HtmlCssSelector(pParse, CSS_SELECTOR_ATTR, &t1, 0);
                 } else if (
                         eToken == CT_TILDE || 
-                        eToken == CT_PIPE || 
+                        eToken == CT_PIPE ||
+                        eToken == CT_STAR ||
+                        eToken == CT_HAT ||
                         eToken == CT_EQUALS
                 ) {
-                    if (eToken == CT_TILDE || eToken == CT_PIPE) {
+                    if (eToken == CT_TILDE || eToken == CT_PIPE
+                        || eToken == CT_STAR || eToken == CT_HAT
+                        ) {
                          CssTokenType e;
                          inputNextToken(pInput);
                          e = inputGetToken(pInput, 0, 0);
@@ -714,6 +719,8 @@ static int parseSelector(pInput, pParse)
                     HtmlCssSelector(pParse, (
                         (eToken == CT_TILDE) ? CSS_SELECTOR_ATTRLISTVALUE :
                         (eToken == CT_PIPE)  ? CSS_SELECTOR_ATTRHYPHEN :
+                        (eToken == CT_STAR)  ? CSS_SELECTOR_ATTRSTAR :
+                        (eToken == CT_HAT)  ? CSS_SELECTOR_ATTRHAT :
                         CSS_SELECTOR_ATTRVALUE) , &t1, &t2
                     );
                 } else {
