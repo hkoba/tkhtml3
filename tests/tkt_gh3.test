@@ -1,0 +1,50 @@
+# -*- coding: utf-8; mode: tcl -*-
+
+#---------------------------------------------------------------------
+# This file contains automated tests for the Tkhtml GitHub issue #3.
+
+proc sourcefile {file} {
+  set fname [file join [file dirname [info script]] $file]
+  uplevel #0 [list source $fname]
+}
+sourcefile common.tcl
+
+html .h
+
+tcltest::test css3selector-1.1 {} -body {
+    .h reset
+    .h style -id author.001 {
+        [class*="span"] {
+            float: left;
+        }
+    }
+
+    .h parse {
+        <div class="myspan4">
+          <h2>Hello</h2>
+        </div>
+    }
+
+    dict get [[.h search div] property] float
+} -result left
+
+tcltest::test css3selector-1.1 {} -body {
+    .h reset
+    .h style -id author.001 {
+        [class^="icon-"] {
+            background-color: red;
+        }
+    }
+
+    .h parse {
+        <div class="icon-foo">
+          <h2>Hello</h2>
+        </div>
+    }
+
+    dict get [[.h search div] property] background-color
+} -result red
+
+
+finish_test
+
