@@ -69,44 +69,46 @@ typedef unsigned int u32;
 #define CSS_SELECTOR_ATTRVALUE           8
 #define CSS_SELECTOR_ATTRLISTVALUE       9
 #define CSS_SELECTOR_ATTRHYPHEN          10
-#define CSS_SELECTOR_CLASS               34   /* eg. ".classname"   */
-#define CSS_SELECTOR_ID                  35   /* eg. "#idname"      */
+#define CSS_SELECTOR_ATTRSTAR            11
+#define CSS_SELECTOR_ATTRHAT             12
+#define CSS_SELECTOR_CLASS               44   /* eg. ".classname"   */
+#define CSS_SELECTOR_ID                  45   /* eg. "#idname"      */
 
 /*
 ** Psuedo-classes
 */
-#define CSS_PSEUDOCLASS_LANG             11
-#define CSS_PSEUDOCLASS_FIRSTCHILD       12
-#define CSS_PSEUDOCLASS_LASTCHILD        13
-#define CSS_PSEUDOCLASS_LINK             14
-#define CSS_PSEUDOCLASS_VISITED          15
-#define CSS_PSEUDOCLASS_ACTIVE           16
-#define CSS_PSEUDOCLASS_HOVER            17
-#define CSS_PSEUDOCLASS_FOCUS            18
+#define CSS_PSEUDOCLASS_LANG             21
+#define CSS_PSEUDOCLASS_FIRSTCHILD       22
+#define CSS_PSEUDOCLASS_LASTCHILD        23
+#define CSS_PSEUDOCLASS_LINK             24
+#define CSS_PSEUDOCLASS_VISITED          25
+#define CSS_PSEUDOCLASS_ACTIVE           26
+#define CSS_PSEUDOCLASS_HOVER            27
+#define CSS_PSEUDOCLASS_FOCUS            28
 
 /*
 ** Pseudo-elements.
 */
-#define CSS_PSEUDOELEMENT_FIRSTLINE      19
-#define CSS_PSEUDOELEMENT_FIRSTLETTER    20
-#define CSS_PSEUDOELEMENT_BEFORE         21
-#define CSS_PSEUDOELEMENT_AFTER          22
+#define CSS_PSEUDOELEMENT_FIRSTLINE      29
+#define CSS_PSEUDOELEMENT_FIRSTLETTER    30
+#define CSS_PSEUDOELEMENT_BEFORE         31
+#define CSS_PSEUDOELEMENT_AFTER          32
 
 /*
 ** CSS media types.
 */
-#define CSS_MEDIA_ALL          23
-#define CSS_MEDIA_AURAL        24
-#define CSS_MEDIA_BRAILLE      25
-#define CSS_MEDIA_EMBOSSED     26
-#define CSS_MEDIA_HANDHELD     27
-#define CSS_MEDIA_PRINT        28
-#define CSS_MEDIA_PROJECTION   29
-#define CSS_MEDIA_SCREEN       30
-#define CSS_MEDIA_TTY          31
-#define CSS_MEDIA_TV           32
+#define CSS_MEDIA_ALL          33
+#define CSS_MEDIA_AURAL        34
+#define CSS_MEDIA_BRAILLE      35
+#define CSS_MEDIA_EMBOSSED     36
+#define CSS_MEDIA_HANDHELD     37
+#define CSS_MEDIA_PRINT        38
+#define CSS_MEDIA_PROJECTION   39
+#define CSS_MEDIA_SCREEN       40
+#define CSS_MEDIA_TTY          41
+#define CSS_MEDIA_TV           42
 
-#define CSS_SELECTOR_NEVERMATCH 33
+#define CSS_SELECTOR_NEVERMATCH 43
 
 
 /*
@@ -282,7 +284,8 @@ enum CssTokenType {
     CT_RSP,      CT_SEMICOLON,    CT_COMMA,     CT_COLON,      CT_PLUS,
     CT_DOT,      CT_HASH,         CT_EQUALS,    CT_TILDE,      CT_PIPE,
     CT_AT,       CT_BANG,         CT_STRING,    CT_LRP,        CT_GT,
-    CT_STAR,     CT_SLASH,        CT_IDENT,     CT_FUNCTION,
+    CT_STAR,     CT_SLASH,        CT_HAT,
+    CT_IDENT,     CT_FUNCTION,
 
     CT_SGML_OPEN, CT_SGML_CLOSE, CT_SYNTAX_ERROR, CT_EOF
 };
