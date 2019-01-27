@@ -98,7 +98,7 @@ proc ::tcltest::mainwin {} {
   scrollbar $w.sb -orient vertical -command "$w.t yview"
   pack $w.sb -side right -fill y
   html $w.t -yscrollcommand "$w.sb set" -width 400 -height 150 \
-     -bd 2 -relief sunken -padx 5 -pady 5
+     -borderwidth 2 -relief sunken -padx 5 -pady 5
   pack $w.t -side right -fill both -expand 1 
   ::tcltest::update-status
 }

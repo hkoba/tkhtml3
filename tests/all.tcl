@@ -10,5 +10,6 @@ sourcefile style.test
 sourcefile dynamic.test
 sourcefile options.test
 
-catch { destroy . }
+finish_test
+
 

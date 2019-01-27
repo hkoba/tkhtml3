@@ -6,7 +6,7 @@
 
 if {![info exists ::env(DEBUG_TKHTML_SYSTEMWIDE)]
     &&
-    [set libs [glob -directory [file dirname [file dirname [info script]]]\
+    [set libs [glob -directory [file dirname [file dirname [file normalize [info script]]]]\
                    libTkhtml3*.so]] ne ""} {
     puts "Loading [lindex $libs 0]..."
     load [lindex $libs 0]
@@ -29,6 +29,7 @@ set SW [apply {args {
             widget::scrolledwindow widget::scrolledwindow \
             BWidget ScrolledWindow]
 if {$SW eq ""} {
+    # XXX: tcltest::AddToSkippedBecause no-scrolledwindow
     return
 }
 
