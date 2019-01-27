@@ -1,7 +1,7 @@
 # -*- coding: utf-8; mode: tcl -*-
 
 #---------------------------------------------------------------------
-# This file contains automated tests for the Tkhtml GitHub issue #1.
+# This file contains automated tests for the Tkhtml GitHub issue #2.
 #
 
 if {![info exists ::env(DEBUG_TKHTML_SYSTEMWIDE)]
@@ -69,6 +69,8 @@ proc badact {} {
     }
 
     update
+
+    destroy .sw
 
     exit
 }
