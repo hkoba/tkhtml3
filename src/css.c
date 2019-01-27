@@ -126,6 +126,10 @@ static const char *constantToString(int c){
             return "CSS_SELECTOR_ID";
         case CSS_SELECTOR_ATTRHYPHEN: 
             return "CSS_SELECTOR_ATTRHYPHEN";
+        case CSS_SELECTOR_ATTRSTAR: 
+            return "CSS_SELECTOR_ATTRSTAR";
+        case CSS_SELECTOR_ATTRHAT: 
+            return "CSS_SELECTOR_ATTRHAT";
         case CSS_PSEUDOCLASS_LANG: 
             return "CSS_PSEUDOCLASS_LANG";
         case CSS_PSEUDOCLASS_FIRSTCHILD: 
@@ -2813,6 +2817,8 @@ cssSelectorPropertySetPair(pParse, pSelector, pPropertySet, freeWhat)
              case CSS_SELECTOR_ATTRVALUE:
              case CSS_SELECTOR_ATTRLISTVALUE:
              case CSS_SELECTOR_ATTRHYPHEN:
+             case CSS_SELECTOR_ATTRSTAR:
+             case CSS_SELECTOR_ATTRHAT:
                  spec += 100;
                  break;
 
@@ -2845,10 +2851,15 @@ cssSelectorPropertySetPair(pParse, pSelector, pPropertySet, freeWhat)
         pS = pSelector;
 
         while (pS->pNext && (
+                             (pS->eSelector >= CSS_SELECTOR_ATTR
+                              && pS->eSelector <= CSS_SELECTOR_ATTRHAT
+                             /*
                 pS->eSelector == CSS_SELECTOR_ATTR ||
                 pS->eSelector == CSS_SELECTOR_ATTRVALUE ||
                 pS->eSelector == CSS_SELECTOR_ATTRLISTVALUE ||
                 pS->eSelector == CSS_SELECTOR_ATTRHYPHEN ||
+                             */
+                              ) ||
                 pS->eSelector == CSS_PSEUDOCLASS_ACTIVE ||
                 pS->eSelector == CSS_PSEUDOCLASS_HOVER ||
                 pS->eSelector == CSS_PSEUDOCLASS_FOCUS ||
@@ -3046,6 +3057,23 @@ static int attrTest(eType, zString, zAttr)
             }
             return 0;
         }
+          
+        /*
+         * True if the attribute value contains specified substring.
+         * Ex. for class*="span", both "span4" and "xxspan" returns true.
+         */
+        case CSS_SELECTOR_ATTRSTAR: {
+          return zAttr && (strstr(zAttr, zString) != (char*) NULL);
+        }
+
+        /*
+         * True if the attribute value begins with given string.
+         * Ex. class^="icon-",  "icon-x" returns true.
+         */
+        case CSS_SELECTOR_ATTRHAT: {
+          int nString = strlen(zString);
+          return zAttr && strncmp(zAttr, zString, nString) == 0;
+        }
 
         /* True if the attribute exists and matches zString up to the
          * first '-' character in the attribute value.
@@ -3128,6 +3156,8 @@ HtmlCssSelectorTest(pSelector, pNode, dynamic_true)
             case CSS_SELECTOR_ATTRVALUE:
             case CSS_SELECTOR_ATTRLISTVALUE:
             case CSS_SELECTOR_ATTRHYPHEN:
+            case CSS_SELECTOR_ATTRSTAR:
+            case CSS_SELECTOR_ATTRHAT:
                 if( !attrTest(p->eSelector, p->zValue, N_ATTR(x,p->zAttr)) ){
                     return 0;
                 }
@@ -3938,6 +3968,16 @@ HtmlCssSelectorToString(pSelector, pObj)
             Tcl_AppendStringsToObj(pObj, 
                 "[", pSelector->zAttr, "|=\"", pSelector->zValue, "\"]", NULL);
             break;
+
+        case CSS_SELECTOR_ATTRSTAR:
+            Tcl_AppendStringsToObj(pObj, 
+                "[", pSelector->zAttr, "*=\"", pSelector->zValue, "\"]", NULL);
+            break;
+        case CSS_SELECTOR_ATTRHAT:
+            Tcl_AppendStringsToObj(pObj, 
+                "[", pSelector->zAttr, "^=\"", pSelector->zValue, "\"]", NULL);
+            break;
+
 
         case CSS_SELECTOR_NEVERMATCH: 
             Tcl_AppendStringsToObj(pObj, "NEVERMATCH", NULL);
