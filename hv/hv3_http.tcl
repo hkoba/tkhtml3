@@ -357,7 +357,11 @@ namespace eval ::hv3::protocol {
 
   # Namespace variable and proc.
   ::variable theWaitingSocket ""
-  proc SSocket {host port} {
+  proc SSocket args {
+    if {[lindex $args 0] eq "-async"} {
+        set args [lassign $args _]
+    }
+    lassign $args host port
     ::variable theWaitingSocket
     set ss $theWaitingSocket
     set theWaitingSocket ""
