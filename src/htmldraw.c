@@ -2641,6 +2641,10 @@ sorterCb(pItem, x, y, pOverflow, clientData)
     /* Only visible items are added to the sorter. */
     if (pItem->type == CANVAS_BOX) {
         HtmlComputedValues *p = HtmlNodeComputedValues(pItem->x.box.pNode);
+        if (! p) {
+          /* BUG, but should not die. */
+          return 0;
+        }
         if (
             (p->eBorderTopStyle == CSS_CONST_NONE || !p->border.iTop) && 
             (p->eBorderBottomStyle == CSS_CONST_NONE || !p->border.iBottom) && 
@@ -2655,6 +2659,10 @@ sorterCb(pItem, x, y, pOverflow, clientData)
     }
     if (pItem->type == CANVAS_LINE) {
         HtmlComputedValues *p = HtmlNodeComputedValues(pItem->x.box.pNode);
+        if (! p) {
+          /* BUG, but should not die. */
+          return 0;
+        }
         if (p->eTextDecoration == CSS_CONST_NONE) {
             return 0;
         }
