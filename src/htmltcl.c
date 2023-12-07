@@ -172,12 +172,14 @@ logCommon(
         char *zBuf = zStack;
         int nBuf;
         Tcl_Obj *pCmd;
+        va_list copy;
 
+        va_copy(copy, ap);
         nBuf = vsnprintf(zBuf, 200, zFormat, ap);
         if (nBuf >= 200) {
             zDyn = HtmlAlloc(0, nBuf + 10);
             zBuf = zDyn;
-            nBuf = vsnprintf(zBuf, nBuf + 1, zFormat, ap);
+            nBuf = vsnprintf(zBuf, nBuf + 1, zFormat, copy);
         }
 
         pCmd = Tcl_DuplicateObj(pLogCmd);
