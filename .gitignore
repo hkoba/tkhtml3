@@ -10,4 +10,6 @@
 /tkhtml.n
 *.o
 *.so
+*.cache
+*~
 pkgIndex.tcl
