@@ -53,6 +53,14 @@ static const char rcsid[] = "$Id: htmlhash.c,v 1.23 2007/11/11 11:00:48 danielk1
 #include "html.h"
 #include "htmlprop.h"
 
+#ifndef TCL_HASH_TYPE
+#if TCL_MAJOR_VERSION > 8
+#  define TCL_HASH_TYPE size_t
+#else
+#  define TCL_HASH_TYPE unsigned
+#endif
+#endif
+
 /*
  *---------------------------------------------------------------------------
  *
@@ -69,7 +77,7 @@ static const char rcsid[] = "$Id: htmlhash.c,v 1.23 2007/11/11 11:00:48 danielk1
  *
  *---------------------------------------------------------------------------
  */
-static int 
+static int
 compareCaseInsensitiveKey(keyPtr, hPtr)
     void *keyPtr;               /* New key to compare. */
     Tcl_HashEntry *hPtr;        /* Existing key to compare. */
@@ -96,7 +104,7 @@ compareCaseInsensitiveKey(keyPtr, hPtr)
  *
  *---------------------------------------------------------------------------
  */
-static size_t
+static TCL_HASH_TYPE
 hashCaseInsensitiveKey(tablePtr, keyPtr)
     Tcl_HashTable *tablePtr;    /* Hash table. */
     void *keyPtr;               /* Key from which to compute hash value. */
@@ -212,7 +220,7 @@ HtmlCaseInsenstiveHashType()
  *
  *---------------------------------------------------------------------------
  */
-static size_t
+static TCL_HASH_TYPE
 hashFontKey(tablePtr, keyPtr)
     Tcl_HashTable *tablePtr;    /* Hash table. */
     void *keyPtr;               /* Key from which to compute hash value. */
@@ -365,7 +373,7 @@ HtmlFontKeyHashType()
  *
  *---------------------------------------------------------------------------
  */
-static size_t 
+static TCL_HASH_TYPE
 hashValuesKey(tablePtr, keyPtr)
     Tcl_HashTable *tablePtr;    /* Hash table. */
     void *keyPtr;               /* Key from which to compute hash value. */

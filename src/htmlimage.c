@@ -228,7 +228,11 @@ photoputblock(interp, handle, blockPtr, x, y, width, height, compRule)
     int height;
     int compRule;
 {
+#if TCL_MAJOR_VERSION >= 9
     Tk_PhotoPutBlock(interp, handle, blockPtr, x, y, width, height, compRule);
+#else
+    Tk_PhotoPutBlock(handle, blockPtr, x, y, width, height);
+#endif
 }
 
 static void
