@@ -735,9 +735,9 @@ getWidgetTag(pTree, zTag, pIsNew)
         Tk_OptionTable otab = pTree->tagOptionTable;
         static Tk_OptionSpec ospec[] = {
             {TK_OPTION_COLOR, "-foreground", "", "", "white", -1, \
-             Tk_Offset(HtmlWidgetTag, foreground), 0, 0, 0},
+             offsetof(HtmlWidgetTag, foreground), 0, 0, 0},
             {TK_OPTION_COLOR, "-background", "", "", "black", -1, \
-             Tk_Offset(HtmlWidgetTag, background), 0, 0, 0},
+             offsetof(HtmlWidgetTag, background), 0, 0, 0},
 
             {TK_OPTION_SYNONYM, "-bg", 0, 0, 0, 0, -1, 0, "-background", 0},
             {TK_OPTION_SYNONYM, "-fg", 0, 0, 0, 0, -1, 0, "-foreground", 0},
@@ -1079,7 +1079,7 @@ HtmlTagAddRemoveCmd(clientData, interp, objc, objv, isAdd)
     ClientData clientData;             /* The HTML widget */
     Tcl_Interp *interp;                /* The interpreter */
     int objc;                          /* Number of arguments */
-    Tcl_Obj *CONST objv[];             /* List of all arguments */
+    Tcl_Obj *const objv[];             /* List of all arguments */
     int isAdd;
 {
     HtmlTree *pTree = (HtmlTree *)clientData;
@@ -1144,7 +1144,7 @@ HtmlTagConfigureCmd(clientData, interp, objc, objv)
     ClientData clientData;             /* The HTML widget */
     Tcl_Interp *interp;                /* The interpreter */
     int objc;                          /* Number of arguments */
-    Tcl_Obj *CONST objv[];             /* List of all arguments */
+    Tcl_Obj *const objv[];             /* List of all arguments */
 {
     HtmlTree *pTree = (HtmlTree *)clientData;
     Tk_OptionTable otab;
@@ -1195,7 +1195,7 @@ HtmlTagDeleteCmd(clientData, interp, objc, objv)
     ClientData clientData;             /* The HTML widget */
     Tcl_Interp *interp;                /* The interpreter */
     int objc;                          /* Number of arguments */
-    Tcl_Obj *CONST objv[];             /* List of all arguments */
+    Tcl_Obj *const objv[];             /* List of all arguments */
 {
     const char *zTag;
     Tcl_HashEntry *pEntry;
@@ -1457,7 +1457,7 @@ HtmlTextTextCmd(clientData, interp, objc, objv)
     ClientData clientData;             /* The HTML widget */
     Tcl_Interp *interp;                /* The interpreter */
     int objc;                          /* Number of arguments */
-    Tcl_Obj *CONST objv[];             /* List of all arguments */
+    Tcl_Obj *const objv[];             /* List of all arguments */
 {
     HtmlTree *pTree = (HtmlTree *)clientData;
     if (objc != 3) {
@@ -1494,7 +1494,7 @@ HtmlTextIndexCmd(clientData, interp, objc, objv)
     ClientData clientData;             /* The HTML widget */
     Tcl_Interp *interp;                /* The interpreter */
     int objc;                          /* Number of arguments */
-    Tcl_Obj *CONST objv[];             /* List of all arguments */
+    Tcl_Obj *const objv[];             /* List of all arguments */
 {
     HtmlTree *pTree = (HtmlTree *)clientData;
     int ii;
@@ -1565,7 +1565,7 @@ HtmlTextOffsetCmd(clientData, interp, objc, objv)
     ClientData clientData;             /* The HTML widget */
     Tcl_Interp *interp;                /* The interpreter */
     int objc;                          /* Number of arguments */
-    Tcl_Obj *CONST objv[];             /* List of all arguments */
+    Tcl_Obj *const objv[];             /* List of all arguments */
 {
     HtmlTree *pTree = (HtmlTree *)clientData;
     HtmlTextMapping *pMap;
@@ -1632,7 +1632,7 @@ HtmlTextBboxCmd(clientData, interp, objc, objv)
     ClientData clientData;             /* The HTML widget */
     Tcl_Interp *interp;                /* The interpreter */
     int objc;                          /* Number of arguments */
-    Tcl_Obj *CONST objv[];             /* List of all arguments */
+    Tcl_Obj *const objv[];             /* List of all arguments */
 {
     HtmlTree *pTree = (HtmlTree *)clientData;
     HtmlNode *pFrom;

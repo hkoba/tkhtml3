@@ -1077,7 +1077,7 @@ void HtmlCssRunStyleParser(zInput, nInput, pParse)
  *---------------------------------------------------------------------------
  */
 CssTokenType HtmlCssGetToken(z, n, pLen)
-    CONST char *z; 
+    const char *z; 
     int n; 
     int *pLen;
 {

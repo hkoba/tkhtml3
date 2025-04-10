@@ -85,10 +85,10 @@ struct PropertyDef {
 };
 
 #define PROPDEF(w, x, y) {                                   \
-  w, CSS_PROPERTY_ ## x, Tk_Offset(HtmlComputedValues, y), 0 \
+  w, CSS_PROPERTY_ ## x, offsetof(HtmlComputedValues, y), 0 \
 }
 #define PROPDEFM(w, x, y, z) {                              \
-  w, CSS_PROPERTY_ ## x, Tk_Offset(HtmlComputedValues, y),  \
+  w, CSS_PROPERTY_ ## x, offsetof(HtmlComputedValues, y),  \
   PROP_MASK_ ## x, z                                        \
 }
 
@@ -886,7 +886,7 @@ propertyValuesObjVerticalAlign(p)
 {
     char zBuf[64];
     if (p->eVerticalAlign) {
-        CONST char *zValue = HtmlCssConstantToString(p->eVerticalAlign);
+        const char *zValue = HtmlCssConstantToString(p->eVerticalAlign);
         return Tcl_NewStringObj(zValue, -1);
     }
     sprintf(zBuf, "%dpx", p->iVerticalAlign);
@@ -1071,8 +1071,8 @@ getInheritPointer(p, pVar)
     HtmlComputedValuesCreator *p;
     unsigned char *pVar;
 {
-    const int values_offset = Tk_Offset(HtmlComputedValuesCreator, values);
-    const int fontkey_offset = Tk_Offset(HtmlComputedValuesCreator, fontKey);
+    const int values_offset = offsetof(HtmlComputedValuesCreator, values);
+    const int fontkey_offset = offsetof(HtmlComputedValuesCreator, fontKey);
     const int values_end = values_offset + sizeof(HtmlComputedValues);
 
 #ifndef NDEBUG
@@ -1191,7 +1191,7 @@ dumpColorTable(pTree)
         pEntry = Tcl_NextHashEntry(&search)
     ) {
         HtmlColor *pColor = Tcl_GetHashValue(pEntry);
-        printf("%s -> {%s (%d) %p}\n", 
+        printf("%p -> {%s (%d) %p}\n", 
             Tcl_GetHashKey(&pTree->aColor, pEntry), 
             pColor->zColor, pColor->nRef, pColor->xcolor
         );
@@ -1227,7 +1227,7 @@ propertyValuesSetColor(p, pCVar, pProp)
 {
     Tcl_HashEntry *pEntry;
     int newEntry = 0;
-    CONST char *zColor;
+    const char *zColor;
     HtmlColor *cVal = 0;
     HtmlTree *pTree = p->pTree;
 
@@ -1592,7 +1592,7 @@ propertyValuesSetImage(p, pImVar, pProp)
     CssProperty *pProp;
 {
     HtmlImage2 *pNew = 0;
-    CONST char *zUrl = 0;
+    const char *zUrl = 0;
 
     switch (pProp->eType) {
         case CSS_CONST_INHERIT: {
@@ -2541,7 +2541,7 @@ HtmlComputedValuesFinish(p)
     HtmlComputedValues *pValues = 0;
     HtmlColor *pColor;
 
-#define OFFSET(x) Tk_Offset(HtmlComputedValues, x)
+#define OFFSET(x) offsetof(HtmlComputedValues, x)
     struct EmExMap {
         unsigned int mask;
         int offset;
@@ -2937,7 +2937,7 @@ HtmlComputedValuesRelease(pTree, pValues)
         if (pValues->nRef == 0) {
             Tcl_HashEntry *pEntry;
     
-            pEntry = Tcl_FindHashEntry(&pTree->aValues, (CONST char *)pValues);
+            pEntry = Tcl_FindHashEntry(&pTree->aValues, (const char *)pValues);
             assert(pValues == &pTree->pPrototypeCreator->values || pEntry);
     
             HtmlFontRelease(pTree, pValues->fFont);
@@ -3023,7 +3023,7 @@ HtmlComputedValuesSetupTables(pTree)
     int n;
 
     Tcl_Obj **apFamily;
-    int nFamily;
+    Tcl_Size nFamily;
     int dummy;
 
     pType = HtmlCaseInsenstiveHashType();
@@ -3179,9 +3179,9 @@ void
 HtmlComputedValuesCleanupTables(pTree)
     HtmlTree *pTree;
 {
-    CONST char **pzCursor;
+    const char **pzCursor;
    
-    CONST char *azColor[] = {
+    const char *azColor[] = {
         "silver",
         "gray",
         "white",
@@ -3243,7 +3243,7 @@ getPropertyObj(pValues, eProp)
         switch (pDef->eType) {
             case ENUM: {
                 int eValue = (int)*(unsigned char *)(v + pDef->iOffset);
-                CONST char *zValue = HtmlCssConstantToString(eValue);
+                const char *zValue = HtmlCssConstantToString(eValue);
                 pValue = Tcl_NewStringObj(zValue, -1);
                 break;
             }
@@ -3364,7 +3364,7 @@ HtmlNodeGetProperty(interp, pProp, pValues)
     Tcl_Obj *pProp;                     /* Property name */
     HtmlComputedValues *pValues;        /* Read value from here */
 {
-    int nProp;
+    Tcl_Size nProp;
     const char *zProp = Tcl_GetStringFromObj(pProp, &nProp);
     int eProp = HtmlCssPropertyLookup(nProp, zProp);
   

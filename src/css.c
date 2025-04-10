@@ -82,7 +82,7 @@ static const char rcsid[] = "$Id: css.c,v 1.139 2007/12/16 11:57:43 danielk1977 
  */
 #define TRACE_PARSER_CALLS 0
 
-static int cssParse(HtmlTree*,int,CONST char*,int,int,Tcl_Obj*,Tcl_Obj*,Tcl_Obj*,Tcl_Obj*,CssStyleSheet**);
+static int cssParse(HtmlTree*,int,const char*,int,int,Tcl_Obj*,Tcl_Obj*,Tcl_Obj*,Tcl_Obj*,CssStyleSheet**);
 
 /*
  *---------------------------------------------------------------------------
@@ -433,11 +433,11 @@ propertyIsLength(pParse, pProp)
 static void 
 rgbToColor(zOut, zRgb, nRgb)
     char *zOut;
-    CONST char *zRgb;
+    const char *zRgb;
     int nRgb;
 {
-    CONST char *z = zRgb;
-    CONST char *zEnd = zRgb+nRgb;
+    const char *z = zRgb;
+    const char *zEnd = zRgb+nRgb;
     int n = 0;
 
     int aN[3] = {0, 0, 0};
@@ -504,7 +504,7 @@ rgbToColor(zOut, zRgb, nRgb)
 static int
 doUrlCmd(pParse, zArg, nArg)
     CssParse *pParse;
-    CONST char *zArg;
+    const char *zArg;
     int nArg;
 {
     const int eval_flags = TCL_EVAL_DIRECT|TCL_EVAL_GLOBAL;
@@ -580,7 +580,7 @@ tokenToProperty(pParse, pToken)
     double realval;       /* Real value, if token can be converted to float */
     int reallen;          /* Bytes of token converted to realval */
 
-    CONST char *z = pToken->z;
+    const char *z = pToken->z;
     int n = pToken->n;
 
     /* Check if this is a length. It is a length if the token consists
@@ -589,7 +589,7 @@ tokenToProperty(pParse, pToken)
      */
     if (tokenToReal(pToken, &reallen, &realval)) {
         for (i=0; i<(sizeof(lengths)/sizeof(lengths[0])); i++) {
-            CONST char *zTokenUnit = &z[reallen];
+            const char *zTokenUnit = &z[reallen];
             if ((n-reallen)==lengths[i].len &&
                     0==strnicmp(zTokenUnit, lengths[i].zUnit, lengths[i].len)) {
                 pProp = HtmlNew(CssProperty);
@@ -612,7 +612,7 @@ tokenToProperty(pParse, pToken)
             for (i=0; pProp==0 && i<nFunc; i++) {
                 const char *zFunc = functions[i].zFunc;
                 if (l==functions[i].len && 0==strnicmp(zFunc, z, l)) {
-                    char CONST *zArg;
+                    char const *zArg;
                     int nArg;
 
                     zArg = &z[l+1];
@@ -722,7 +722,7 @@ tokenToProperty(pParse, pToken)
 static CssProperty *
 textToProperty(pParse, z, n)
     CssParse *pParse;
-    CONST char *z;
+    const char *z;
     int n;
 {
     CssToken token;
@@ -750,7 +750,7 @@ textToProperty(pParse, z, n)
  *---------------------------------------------------------------------------
  */
 CssProperty *HtmlCssStringToProperty(z, n)
-    CONST char *z; 
+    const char *z; 
     int n;
 {
     CssToken sToken;
@@ -775,7 +775,7 @@ CssProperty *HtmlCssStringToProperty(z, n)
  *
  *---------------------------------------------------------------------------
  */
-CONST char *
+const char *
 HtmlCssPropertyGetString(pProp)
     CssProperty *pProp;
 {
@@ -989,8 +989,8 @@ static void propertySetAddShortcutBorder(pParse, p, prop, v)
     int prop;
     CssToken *v;               /* Value for property. */
 {
-    CONST char *z = v->z;
-    CONST char *zEnd = z + v->n;
+    const char *z = v->z;
+    const char *zEnd = z + v->n;
     int i;
 
     CssProperty *pBorderColor = 0;
@@ -1187,8 +1187,8 @@ shortcutBackground(pParse, p, v)
     CssPropertySet *p;         /* Property set */
     CssToken *v;               /* Value for 'background' property */
 {
-    CONST char *z= v->z;
-    CONST char *zEnd = z + v->n;
+    const char *z= v->z;
+    const char *zEnd = z + v->n;
     int nProp = 0;
     int ii;
 
@@ -1349,8 +1349,8 @@ shortcutListStyle(pParse, p, v)
     CssPropertySet *p;         /* Property set */
     CssToken *v;               /* Value for 'list-style' property */
 {
-    CONST char *z= v->z;
-    CONST char *zEnd = z + v->n;
+    const char *z= v->z;
+    const char *zEnd = z + v->n;
 
     CssProperty *pType = 0;
     CssProperty *pPosition = 0;
@@ -1483,11 +1483,11 @@ propertySetAddList(pParse, eProp, p, v)
  *
  *---------------------------------------------------------------------------
  */
-static CONST char *
+static const char *
 getNextFontFamily(zList, nList, pzNext)
-    CONST char *zList;
+    const char *zList;
     int nList;
-    CONST char **pzNext;
+    const char **pzNext;
 {
     CssToken token;
     int t;
@@ -1618,8 +1618,8 @@ propertySetAddShortcutFont(pParse, p, v)
     CssPropertySet *p;         /* Property set */
     CssToken *v;               /* Value for 'background' property */
 {
-    CONST char *z= v->z;
-    CONST char *zEnd = z + v->n;
+    const char *z= v->z;
+    const char *zEnd = z + v->n;
 
     static const CssToken normal = { "normal", CSS_CONST_NORMAL };
 
@@ -1760,8 +1760,8 @@ tokenToPropertyList(pToken, apProp, nMax)
     CssProperty **apProp;
     int nMax;
 {
-    CONST char *z= pToken->z;
-    CONST char *zEnd = z + pToken->n;
+    const char *z= pToken->z;
+    const char *zEnd = z + pToken->n;
     int nProp = 0;
     int ii;
 
@@ -1902,8 +1902,8 @@ static void propertySetAddShortcutBorderColor(p, prop, v)
     int prop;
     CssToken *v;               /* Value for property. */
 {
-    CONST char *z= v->z;
-    CONST char *zEnd = z + v->n;
+    const char *z= v->z;
+    const char *zEnd = z + v->n;
     int n;
 
     int i = 0;                 /* Index of apProp to read next color in to */
@@ -2046,8 +2046,8 @@ comparePriority(pLeft, pRight)
     if (a) { 
         int i;
         if (pLeft->origin == pRight->origin) {
-            CONST char *zLeft = Tcl_GetString(pLeft->pIdTail);
-            CONST char *zRight = Tcl_GetString(pRight->pIdTail);
+            const char *zLeft = Tcl_GetString(pLeft->pIdTail);
+            const char *zRight = Tcl_GetString(pRight->pIdTail);
             return strcmp(zLeft, zRight);
         }
         for (i = 0; i < 3; i++) {
@@ -2161,7 +2161,7 @@ cssParse(
 pTree, n, z, isStyle, origin, pStyleId, pImportCmd, pUrlCmd, pErrorVar, ppStyle)
     HtmlTree *pTree;
     int n;                       /* Size of z in bytes */
-    CONST char *z;               /* Text of attribute/document */
+    const char *z;               /* Text of attribute/document */
     int isStyle;                 /* True if this is a style attribute */
     int origin;                  /* CSS_ORIGIN_* value */
     Tcl_Obj *pStyleId;           /* Second and later parts of stylesheet id */
@@ -2279,9 +2279,9 @@ HtmlStyleParse(pTree, pStyleText, pId, pImportCmd, pUrlCmd, pErrorVar)
 {
     int origin = 0;
     Tcl_Obj *pStyleId = 0;
-    CONST char *zId;
-    CONST char *zStyleText;
-    int nStyleText;
+    const char *zId;
+    const char *zStyleText;
+    Tcl_Size nStyleText;
 
     /* Parse up the stylesheet id. It must begin with one of the strings
      * "agent", "user" or "author". After that it may contain any text.
@@ -2693,8 +2693,8 @@ ruleCompare(CssRule *pLeft, CssRule *pRight) {
         res = pLeft->specificity - pRight->specificity;
 
         if (res == 0) {
-            CONST char *zLeft = Tcl_GetString(pLeft->pPriority->pIdTail);
-            CONST char *zRight = Tcl_GetString(pRight->pPriority->pIdTail);
+            const char *zLeft = Tcl_GetString(pLeft->pPriority->pIdTail);
+            const char *zRight = Tcl_GetString(pRight->pPriority->pIdTail);
             res = strcmp(zLeft, zRight);
 
             if (res == 0) {
@@ -3368,7 +3368,7 @@ overrideToPropertyValues(pTree, p, aPropDone, pOverride)
     Tcl_Obj *pOverride;
 {
     Tcl_Obj **apObj = 0;
-    int nObj = 0;
+    Tcl_Size nObj = 0;
     int ii;
 
     if (!pOverride) return;
@@ -3377,7 +3377,7 @@ overrideToPropertyValues(pTree, p, aPropDone, pOverride)
     for (ii = 0; ii < (nObj - 1); ii += 2) { 
         int eProp;
         const char *zProp;
-        int nProp;
+        Tcl_Size nProp;
 
         zProp = Tcl_GetStringFromObj(apObj[ii], &nProp);
         eProp = HtmlCssPropertyLookup(nProp, zProp);
@@ -3873,7 +3873,7 @@ void HtmlCssImport(pParse, pToken)
     if (pEval) {
         Tcl_Interp *interp = pParse->interp;
         CssProperty *p = tokenToProperty(pParse, pToken);
-        CONST char *zUrl = p->v.zVal;
+        const char *zUrl = p->v.zVal;
 
         switch (p->eType) {
             case CSS_TYPE_URL:
@@ -4057,7 +4057,7 @@ HtmlCssStyleReport(clientData, interp, objc, objv)
     ClientData clientData;             /* The HTML widget data structure */
     Tcl_Interp *interp;                /* Current interpreter. */
     int objc;                          /* Number of arguments. */
-    Tcl_Obj *CONST objv[];             /* Argument strings. */
+    Tcl_Obj *const objv[];             /* Argument strings. */
 {
     HtmlTree *pTree = (HtmlTree *)clientData;
     CssStyleSheet *pStyle = pTree->pStyle;
@@ -4246,7 +4246,7 @@ HtmlCssStyleConfigDump(clientData, interp, objc, objv)
     ClientData clientData;             /* The HTML widget data structure */
     Tcl_Interp *interp;                /* Current interpreter. */
     int objc;                          /* Number of arguments. */
-    Tcl_Obj *CONST objv[];             /* Argument strings. */
+    Tcl_Obj *const objv[];             /* Argument strings. */
 {
 #define MAX_RULES 8096
     HtmlTree *pTree = (HtmlTree *)clientData;
@@ -4369,7 +4369,7 @@ HtmlCssInlineQuery(interp, pPropertySet, pArg)
       
         if (pArg) {
             char *zArg;
-            int nArg;
+            Tcl_Size nArg;
             int eProp;
     
             zArg = Tcl_GetStringFromObj(pArg, &nArg);

@@ -1692,7 +1692,7 @@ static int
 interpDebug(pTclSeeInterp, objc, objv)
     SeeInterp *pTclSeeInterp;          /* Interpreter */
     int objc;                          /* Number of arguments. */
-    Tcl_Obj *CONST objv[];             /* Argument strings. */
+    Tcl_Obj *const objv[];             /* Argument strings. */
 {
     int iSlot;
     Tcl_Obj *pRet = Tcl_NewObj();
@@ -1760,7 +1760,7 @@ interpCmd(clientData, pTclInterp, objc, objv)
     ClientData clientData;             /* The SeeInterp data structure */
     Tcl_Interp *pTclInterp;            /* Current interpreter. */
     int objc;                          /* Number of arguments. */
-    Tcl_Obj *CONST objv[];             /* Argument strings. */
+    Tcl_Obj *const objv[];             /* Argument strings. */
 {
     int rc = TCL_OK;
     int iChoice;
@@ -2030,7 +2030,7 @@ tclSeeInterp(clientData, interp, objc, objv)
     ClientData clientData;             /* Unused */
     Tcl_Interp *interp;                /* Current interpreter. */
     int objc;                          /* Number of arguments. */
-    Tcl_Obj *CONST objv[];             /* Argument strings. */
+    Tcl_Obj *const objv[];             /* Argument strings. */
 {
     char zCmd[64];
     SeeInterp *pInterp;
@@ -2505,7 +2505,7 @@ tclSeeAlloc(clientData, interp, objc, objv)
     ClientData clientData;             /* Unused */
     Tcl_Interp *interp;                /* Current interpreter. */
     int objc;                          /* Number of arguments. */
-    Tcl_Obj *CONST objv[];             /* Argument strings. */
+    Tcl_Obj *const objv[];             /* Argument strings. */
 {
     Tcl_Obj *pRet = Tcl_NewObj();
     int ii;
@@ -2542,7 +2542,7 @@ tclSeeCollect(clientData, interp, objc, objv)
     ClientData clientData;             /* Unused */
     Tcl_Interp *interp;                /* Current interpreter. */
     int objc;                          /* Number of arguments. */
-    Tcl_Obj *CONST objv[];             /* Argument strings. */
+    Tcl_Obj *const objv[];             /* Argument strings. */
 {
 #ifndef NO_HAVE_GC
     GC_gcollect();
@@ -2555,7 +2555,7 @@ classCall(clientData, interp, objc, objv)
     ClientData clientData;             /* Pointer to class object */
     Tcl_Interp *interp;                /* Current interpreter. */
     int objc;                          /* Number of arguments. */
-    Tcl_Obj *CONST objv[];             /* Argument strings. */
+    Tcl_Obj *const objv[];             /* Argument strings. */
 {
     return TCL_OK;
 }
@@ -2590,7 +2590,7 @@ tclSeeClass(clientData, interp, objc, objv)
     ClientData clientData;             /* Unused */
     Tcl_Interp *interp;                /* Current interpreter. */
     int objc;                          /* Number of arguments. */
-    Tcl_Obj *CONST objv[];             /* Argument strings. */
+    Tcl_Obj *const objv[];             /* Argument strings. */
 {
     SeeTclClass *p;
     Tcl_Obj **apObj;
