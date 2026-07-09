@@ -71,6 +71,7 @@ static void inputPrintToken(pInput)
         case CT_HASH: printf("CT_HASH"); break;
         case CT_EQUALS: printf("CT_EQUALS"); break;
         case CT_TILDE: printf("CT_TILDE"); break;
+        case CT_DOLLAR: printf("CT_DOLLAR"); break;
         case CT_PIPE: printf("CT_PIPE"); break;
 
         case CT_AT: printf("CT_AT"); break;
@@ -239,6 +240,7 @@ static int inputNextToken(pInput)
         case '!': eToken = CT_BANG; break;
         case '/': eToken = CT_SLASH; break;
         case '^': eToken = CT_HAT; break;
+        case '$': eToken = CT_DOLLAR; break;
 
         case '"': case '\'': {
             char delim = z[0];
@@ -509,6 +511,84 @@ static int parseDeclarationError(pInput, pParse)
 /*
  *---------------------------------------------------------------------------
  *
+ * parseNthChildArgs --
+ *
+ *     Parse the argument of an :nth-child() pseudo-class - "odd", "even"
+ *     or the "an+b" micro-syntax (e.g. "2n+1", "-n+3", "n", "4").
+ *
+ * Results:
+ *     Zero if the argument was parsed successfully, in which case *pA and
+ *     *pB are set to the a and b coefficients. Non-zero on a parse error.
+ *
+ *---------------------------------------------------------------------------
+ */
+static int
+parseNthChildArgs(z, n, pA, pB)
+    const char *z;
+    int n;
+    int *pA;
+    int *pB;
+{
+    int i = 0;
+    int a = 0;
+    int b = 0;
+    int sign = 1;
+    int nDigit;
+
+    while (i < n && isspace((unsigned char)z[i])) i++;
+    while (n > i && isspace((unsigned char)z[n-1])) n--;
+    if (i >= n) return 1;
+
+    if ((n-i) == 3 && 0 == strnicmp(&z[i], "odd", 3)) {
+        *pA = 2; *pB = 1;
+        return 0;
+    }
+    if ((n-i) == 4 && 0 == strnicmp(&z[i], "even", 4)) {
+        *pA = 2; *pB = 0;
+        return 0;
+    }
+
+    if (z[i] == '+') { i++; }
+    else if (z[i] == '-') { sign = -1; i++; }
+    nDigit = 0;
+    while (i < n && safe_isdigit(z[i])) {
+        b = b*10 + (z[i]-'0');
+        nDigit++;
+        i++;
+    }
+    if (i < n && (z[i] == 'n' || z[i] == 'N')) {
+        a = sign * (nDigit ? b : 1);
+        b = 0;
+        sign = 1;
+        i++;
+        while (i < n && isspace((unsigned char)z[i])) i++;
+        if (i < n) {
+            if (z[i] == '+') { sign = 1; }
+            else if (z[i] == '-') { sign = -1; }
+            else return 1;
+            i++;
+            while (i < n && isspace((unsigned char)z[i])) i++;
+            nDigit = 0;
+            while (i < n && safe_isdigit(z[i])) {
+                b = b*10 + (z[i]-'0');
+                nDigit++;
+                i++;
+            }
+            if (!nDigit) return 1;
+        }
+    } else {
+        if (!nDigit) return 1;
+    }
+    if (i != n) return 1;
+
+    *pA = a;
+    *pB = sign * b;
+    return 0;
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
  * parseSelector --
  *
  * Results:
@@ -559,11 +639,19 @@ static int parseSelector(pInput, pParse)
                  * Ignore the white-space if it is either (b) or (c). Otherwise
                  * add a descendant selector to the parse context.
                  */
-                if (eNext != CT_PLUS && eNext != CT_GT && 
-                    eNext != CT_LP && eNext != CT_COMMA
+                if (eNext != CT_PLUS && eNext != CT_GT &&
+                    eNext != CT_LP && eNext != CT_COMMA &&
+                    eNext != CT_TILDE
                 ) {
                     HtmlCssSelector(pParse, CSS_SELECTORCHAIN_DESCENDANT, 0, 0);
                 }
+                break;
+            }
+
+            case CT_TILDE: {    /* General sibling selector (CSS3) */
+                HtmlCssSelector(pParse, CSS_SELECTORCHAIN_GENERALSIBLING, 0, 0);
+                /* Ignore any white-space that occurs after a '~' */
+                if (eNext == CT_SPACE) inputNextToken(pInput);
                 break;
             }
     
@@ -601,6 +689,30 @@ static int parseSelector(pInput, pParse)
                     twocolons = 1;
                     inputNextToken(pInput);
                     eNext = inputGetToken(pInput, 0, 0);
+                }
+                if (eNext == CT_FUNCTION) {
+                    /* A functional pseudo-class. Only :nth-child(...) is
+                     * supported; the whole "name(arg)" text arrives as a
+                     * single CT_FUNCTION token.
+                     */
+                    int a, b;
+                    char zBuf[64];
+                    CssToken tArg;
+                    inputGetToken(pInput, &zToken, &nToken);
+                    if (twocolons ||
+                        nToken < 11 ||
+                        0 != strnicmp(zToken, "nth-child(", 10) ||
+                        zToken[nToken-1] != ')' ||
+                        parseNthChildArgs(&zToken[10], nToken-11, &a, &b)
+                    ) {
+                        goto syntax_error;
+                    }
+                    sprintf(zBuf, "%d %d", a, b);
+                    tArg.z = zBuf;
+                    tArg.n = strlen(zBuf);
+                    HtmlCssSelector(pParse, CSS_PSEUDOCLASS_NTHCHILD, 0, &tArg);
+                    inputNextToken(pInput);
+                    break;
                 }
                 if (eNext != CT_IDENT) goto syntax_error;
                 inputGetToken(pInput, &zToken, &nToken);
@@ -686,14 +798,16 @@ static int parseSelector(pInput, pParse)
                 if (eToken == CT_RSP) {
                     HtmlCssSelector(pParse, CSS_SELECTOR_ATTR, &t1, 0);
                 } else if (
-                        eToken == CT_TILDE || 
+                        eToken == CT_TILDE ||
                         eToken == CT_PIPE ||
                         eToken == CT_STAR ||
                         eToken == CT_HAT ||
+                        eToken == CT_DOLLAR ||
                         eToken == CT_EQUALS
                 ) {
                     if (eToken == CT_TILDE || eToken == CT_PIPE
                         || eToken == CT_STAR || eToken == CT_HAT
+                        || eToken == CT_DOLLAR
                         ) {
                          CssTokenType e;
                          inputNextToken(pInput);
@@ -721,6 +835,7 @@ static int parseSelector(pInput, pParse)
                         (eToken == CT_PIPE)  ? CSS_SELECTOR_ATTRHYPHEN :
                         (eToken == CT_STAR)  ? CSS_SELECTOR_ATTRSTAR :
                         (eToken == CT_HAT)  ? CSS_SELECTOR_ATTRHAT :
+                        (eToken == CT_DOLLAR) ? CSS_SELECTOR_ATTREND :
                         CSS_SELECTOR_ATTRVALUE) , &t1, &t2
                     );
                 } else {

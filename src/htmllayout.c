@@ -252,7 +252,7 @@ nodeGetBoxProperties(pLayout, pNode, iContaining, pBoxProperties)
      * Also, if we are running a min-max text, percentage widths are zero.
      */
     int c = iContaining;
-    if (pLayout->minmaxTest || c < 0) {
+    if ((pLayout && pLayout->minmaxTest) || c < 0) {
         c = 0;
     }
 
@@ -495,6 +495,53 @@ nodeIsReplaced(pNode)
     ) ? 1 : 0);
 }
 
+/*
+ *---------------------------------------------------------------------------
+ *
+ * boxSizingSubtract --
+ *
+ *     Support for the CSS3 'box-sizing' property. The layout engine
+ *     works exclusively in content-box terms. If the computed value of
+ *     'box-sizing' for pNode is "border-box", then resolved values of
+ *     the 'width', 'height', 'min-width', 'max-width', 'min-height' and
+ *     'max-height' properties must be converted to content-box terms by
+ *     subtracting the border and padding widths of the relevant axis.
+ *
+ *     iVal is the resolved property value. Sentinel values (AUTO, NONE,
+ *     NORMAL - all less than MAX_PIXELVAL) are passed through unchanged.
+ *
+ *     pLayout may be passed as NULL when no layout-context is available
+ *     (min-max width tests then do not apply). iContaining is used to
+ *     resolve percentage paddings; pass a negative value if the
+ *     containing width is unknown (percentages then resolve to 0).
+ *
+ * Results:
+ *     The (possibly adjusted) value iVal.
+ *
+ *---------------------------------------------------------------------------
+ */
+static int
+boxSizingSubtract(pLayout, pNode, iContaining, iVal, isVertical)
+    LayoutContext *pLayout;
+    HtmlNode *pNode;
+    int iContaining;
+    int iVal;
+    int isVertical;
+{
+    HtmlComputedValues *pV = HtmlNodeComputedValues(pNode);
+    if (pV && pV->eBoxSizing == CSS_CONST_BORDER_BOX && iVal >= MAX_PIXELVAL) {
+        BoxProperties box;
+        nodeGetBoxProperties(pLayout, pNode, iContaining, &box);
+        if (isVertical) {
+            iVal -= (box.iTop + box.iBottom);
+        } else {
+            iVal -= (box.iLeft + box.iRight);
+        }
+        iVal = MAX(iVal, 0);
+    }
+    return iVal;
+}
+
 static void
 considerMinMaxHeight(pNode, iContaining, piHeight)
     HtmlNode *pNode;
@@ -512,6 +559,9 @@ considerMinMaxHeight(pNode, iContaining, piHeight)
 
         if (iMinHeight < MAX_PIXELVAL) iMinHeight = 0;
         if (iMaxHeight < MAX_PIXELVAL) iMaxHeight = PIXELVAL_NONE;
+
+        iMinHeight = boxSizingSubtract(0, pNode, -1, iMinHeight, 1);
+        iMaxHeight = boxSizingSubtract(0, pNode, -1, iMaxHeight, 1);
  
         if (iMaxHeight != PIXELVAL_NONE) {
             iHeight = MIN(iHeight, iMaxHeight);
@@ -556,6 +606,8 @@ getHeight(pNode, iHeight, iContainingHeight)
     int height = PIXELVAL(pV, HEIGHT, iContainingHeight);
     if (height == PIXELVAL_AUTO) {
         height = iHeight;
+    } else {
+        height = boxSizingSubtract(0, pNode, -1, height, 1);
     }
 
     considerMinMaxHeight(pNode, iContainingHeight, &height);
@@ -574,14 +626,16 @@ getWidth(iWidthCalculated, iWidthContent)
 }
 
 static int
-getWidthProperty(pLayout, pComputed, iContaining) 
+getWidthProperty(pLayout, pNode, pComputed, iContaining)
     LayoutContext *pLayout;
+    HtmlNode *pNode;
     HtmlComputedValues *pComputed;
     int iContaining;
 {
-    return PIXELVAL(
+    int ret = PIXELVAL(
         pComputed, WIDTH, pLayout->minmaxTest ? PIXELVAL_AUTO : iContaining
     );
+    return boxSizingSubtract(pLayout, pNode, iContaining, ret, 0);
 }
 
 /*
@@ -614,6 +668,9 @@ considerMinMaxWidth(pNode, iContaining, piWidth)
 
         assert(iMaxWidth == PIXELVAL_NONE || iMaxWidth >= MAX_PIXELVAL);
         assert(iMinWidth >= MAX_PIXELVAL);
+
+        iMinWidth = boxSizingSubtract(0, pNode, iContaining, iMinWidth, 0);
+        iMaxWidth = boxSizingSubtract(0, pNode, iContaining, iMaxWidth, 0);
  
         if (iMaxWidth != PIXELVAL_NONE) {
             iWidth = MIN(iWidth, iMaxWidth);
@@ -855,7 +912,7 @@ normalFlowLayoutOverflow(pLayout, pBox, pNode, pY, pContext, pNormal)
 
     nodeGetMargins(pLayout, pNode, pBox->iContaining, &margin);
     nodeGetBoxProperties(pLayout, pNode, pBox->iContaining, &box);
-    iComputedWidth = getWidthProperty(pLayout, pV, pBox->iContaining);
+    iComputedWidth = getWidthProperty(pLayout, pNode, pV, pBox->iContaining);
     iWidth = iComputedWidth;
 
     iMPB = margin.margin_left + margin.margin_right + box.iLeft + box.iRight;
@@ -1092,6 +1149,7 @@ normalFlowLayoutFloat(pLayout, pBox, pNode, pY, pDoNotUse, pNormal)
         int iHeight = PIXELVAL(pV, HEIGHT, pBox->iContainingHeight);
         int isAuto = 0;
 
+        iWidth = boxSizingSubtract(pLayout, pNode, iContaining, iWidth, 0);
         nodeGetBoxProperties(pLayout, pNode, iContaining, &box);
 
         /* If the computed value if iWidth is "auto", calculate the
@@ -2638,6 +2696,7 @@ normalFlowLayoutBlock(pLayout, pBox, pNode, pY, pContext, pNormal)
     iWidth = PIXELVAL(
         pV, WIDTH, pLayout->minmaxTest ? PIXELVAL_AUTO : pBox->iContaining
     );
+    iWidth = boxSizingSubtract(pLayout, pNode, pBox->iContaining, iWidth, 0);
 
     iMPB = box.iLeft + box.iRight + margin.margin_left + margin.margin_right;
     if (iWidth == PIXELVAL_AUTO) {

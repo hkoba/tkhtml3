@@ -1,0 +1,174 @@
+# Test script for Tkhtml
+#
+# Tests for the CSS3 features added for bootstrap 2 support:
+#
+#     - rgba() / hsl() / hsla() color functions
+#     - rejection of unsupported functional values for background-image
+#       (e.g. linear-gradient()), letting the cascade fall back
+#     - :nth-child(odd|even|an+b)
+#     - the general sibling combinator "~"
+#     - the [attr$="value"] suffix selector
+#     - case-insensitive [attr*=] / [attr^=] matching
+#     - box-sizing: border-box
+#
+proc sourcefile {file} {
+  set fname [file join [file dirname [info script]] $file]
+  uplevel #0 [list source $fname]
+}
+sourcefile common.tcl
+
+catch {destroy .h}
+html .h
+
+proc property {node prop} {
+  return [$node property $prop]
+}
+
+proc idnode {id} {
+  lindex [.h search "\[id=\"$id\"\]"] 0
+}
+
+#--------------------------------------------------------------------------
+# css3-1.*: color functions.
+#
+tcltest::test css3-1.0 {rgba blends against white} -body {
+  .h reset
+  .h configure -defaultstyle ""
+  .h style { .a { color: rgba(0, 0, 0, 0.5) } }
+  .h parse -final {<div class="a" id="d">x</div>}
+  property [idnode d] color
+} -result {#808080}
+
+tcltest::test css3-1.1 {rgba with zero alpha is transparent} -body {
+  .h reset
+  .h style { .a { background-color: rgba(255, 0, 0, 0) } }
+  .h parse -final {<div class="a" id="d">x</div>}
+  property [idnode d] background-color
+} -result {transparent}
+
+tcltest::test css3-1.2 {hsl primary} -body {
+  .h reset
+  .h style { .a { color: hsl(120, 100%, 25%) } }
+  .h parse -final {<div class="a" id="d">x</div>}
+  property [idnode d] color
+} -result {#008000}
+
+tcltest::test css3-1.3 {hsla with alpha} -body {
+  .h reset
+  .h style { .a { color: hsla(0, 0%, 0%, 0.25) } }
+  .h parse -final {<div class="a" id="d">x</div>}
+  property [idnode d] color
+} -result {#bfbfbf}
+
+tcltest::test css3-1.4 {invalid rgba falls back to earlier declaration} -body {
+  .h reset
+  .h style { .a { color: red; color: rgba(bad) } }
+  .h parse -final {<div class="a" id="d">x</div>}
+  property [idnode d] color
+} -result {red}
+
+tcltest::test css3-1.5 {linear-gradient is not an image url} -body {
+  .h reset
+  .h style { .a {
+      background-color: #0074cc;
+      background-image: linear-gradient(top, #08c, #05c);
+  } }
+  .h parse -final {<div class="a" id="d">x</div>}
+  list [property [idnode d] background-image] \
+       [property [idnode d] background-color]
+} -result {none #0074cc}
+
+#--------------------------------------------------------------------------
+# css3-2.*: selectors.
+#
+tcltest::test css3-2.0 {nth-child odd/even} -body {
+  .h reset
+  .h style {
+    li:nth-child(odd) { color: red }
+    li:nth-child(even) { color: blue }
+  }
+  .h parse -final {
+    <ul><li id=l1>1</li><li id=l2>2</li><li id=l3>3</li></ul>
+  }
+  list [property [idnode l1] color] [property [idnode l2] color] \
+       [property [idnode l3] color]
+} -result {red blue red}
+
+tcltest::test css3-2.1 {nth-child an+b} -body {
+  .h reset
+  .h style {
+    li:nth-child(3n+1) { color: red }
+    li:nth-child(-n+2) { font-style: italic }
+  }
+  .h parse -final {
+    <ul><li id=l1>1</li><li id=l2>2</li><li id=l3>3</li><li id=l4>4</li></ul>
+  }
+  list [property [idnode l1] color] [property [idnode l4] color] \
+       [property [idnode l2] font-style] [property [idnode l3] font-style]
+} -result {red red italic normal}
+
+tcltest::test css3-2.2 {general sibling combinator} -body {
+  .h reset
+  .h style { h2 ~ p { color: green } }
+  .h parse -final {
+    <p id=p0>before</p>
+    <h2>head</h2>
+    <div>intervening</div>
+    <p id=p1>after</p>
+  }
+  list [property [idnode p0] color] [property [idnode p1] color]
+} -result {black green}
+
+tcltest::test css3-2.3 {attribute suffix selector} -body {
+  .h reset
+  .h style { [href$=".png"] { color: purple } }
+  .h parse -final {
+    <a id=a1 href="x.png">png</a><a id=a2 href="x.gif">gif</a>
+  }
+  list [property [idnode a1] color] [property [idnode a2] color]
+} -result {purple black}
+
+tcltest::test css3-2.4 {attr *= and ^= are case-insensitive} -body {
+  .h reset
+  .h style {
+    [class*="SPAN"] { color: orange }
+    [class^="ICON-"] { color: teal }
+  }
+  .h parse -final {
+    <span id=s1 class="span4">a</span>
+    <span id=s2 class="icon-user">b</span>
+  }
+  list [property [idnode s1] color] [property [idnode s2] color]
+} -result {orange teal}
+
+#--------------------------------------------------------------------------
+# css3-3.*: box-sizing.
+#
+tcltest::test css3-3.0 {box-sizing border-box vs content-box} -body {
+  .h reset
+  .h style {
+    div { display: block; border: 5px solid black; padding: 10px }
+    .cb { box-sizing: content-box; width: 100px; height: 40px }
+    .bb { box-sizing: border-box;  width: 100px; height: 40px }
+  }
+  .h parse -final {
+    <div class="cb" id=a>x</div>
+    <div class="bb" id=b>x</div>
+  }
+  pack .h -fill both -expand 1
+  update
+  foreach {ax1 ay1 ax2 ay2} [.h bbox [idnode a]] break
+  foreach {bx1 by1 bx2 by2} [.h bbox [idnode b]] break
+  pack forget .h
+  list [expr {$ax2-$ax1}] [expr {$ay2-$ay1}] \
+       [expr {$bx2-$bx1}] [expr {$by2-$by1}]
+} -result {130 70 100 40}
+
+tcltest::test css3-3.1 {box-sizing computed value} -body {
+  .h reset
+  .h style { .bb { box-sizing: border-box } }
+  .h parse -final {<div class="bb" id=d>x</div><div id=e>y</div>}
+  list [property [idnode d] box-sizing] [property [idnode e] box-sizing]
+} -result {border-box content-box}
+
+finish_test

@@ -128,8 +128,14 @@ static const char *constantToString(int c){
             return "CSS_SELECTOR_ATTRHYPHEN";
         case CSS_SELECTOR_ATTRSTAR: 
             return "CSS_SELECTOR_ATTRSTAR";
-        case CSS_SELECTOR_ATTRHAT: 
+        case CSS_SELECTOR_ATTRHAT:
             return "CSS_SELECTOR_ATTRHAT";
+        case CSS_SELECTOR_ATTREND:
+            return "CSS_SELECTOR_ATTREND";
+        case CSS_SELECTORCHAIN_GENERALSIBLING:
+            return "CSS_SELECTORCHAIN_GENERALSIBLING";
+        case CSS_PSEUDOCLASS_NTHCHILD:
+            return "CSS_PSEUDOCLASS_NTHCHILD";
         case CSS_PSEUDOCLASS_LANG: 
             return "CSS_PSEUDOCLASS_LANG";
         case CSS_PSEUDOCLASS_FIRSTCHILD: 
@@ -493,6 +499,130 @@ rgbToColor(zOut, zRgb, nRgb)
 /*
  *---------------------------------------------------------------------------
  *
+ * colorFuncToColor --
+ *
+ *     Transform the argument list of an rgb()/rgba()/hsl()/hsla()
+ *     functional color into a color string that Tk understands.
+ *
+ *     Alpha components are approximated: a color with alpha == 0 becomes
+ *     "transparent", any other alpha is composited against a white
+ *     backdrop (Tk colors have no alpha channel). This keeps e.g.
+ *     bootstrap's "border-color: rgba(0,0,0,0.25)" a sensible grey.
+ *
+ * Results:
+ *     None.
+ *
+ * Side effects:
+ *     Writes at most 12 bytes (including the nul-terminator) to zOut.
+ *     On a parse error, zOut is set to an empty string, which later
+ *     fails Tk_GetColor() and correctly invalidates the declaration.
+ *
+ *---------------------------------------------------------------------------
+ */
+static void
+colorFuncToColor(zOut, isHsl, hasAlpha, zArg, nArg)
+    char *zOut;
+    int isHsl;                /* True for hsl()/hsla() */
+    int hasAlpha;             /* True for rgba()/hsla() */
+    const char *zArg;
+    int nArg;
+{
+    const char *z = zArg;
+    const char *zEnd = zArg + nArg;
+    int nComp = 3 + (hasAlpha ? 1 : 0);
+    CssToken aToken[4];
+    double rgb[3];
+    double alpha = 1.0;
+    int aN[3];
+    int ii;
+
+    for (ii = 0; ii < nComp; ii++){
+        aToken[ii].z = HtmlCssGetNextCommaListItem(z, zEnd - z, &aToken[ii].n);
+        if (!aToken[ii].z || !aToken[ii].n) goto bad_color;
+        z = &(aToken[ii].z[aToken[ii].n]);
+    }
+
+    if (isHsl) {
+        double h, s, l;
+        double c, x, m;
+        char *zTail;
+        int iSext;
+
+        h = strtod(aToken[0].z, &zTail);
+        if (zTail == aToken[0].z) goto bad_color;
+        for (ii = 1; ii < 3; ii++) {
+            if (aToken[ii].z[aToken[ii].n-1] != '%') goto bad_color;
+            rgb[ii] = strtod(aToken[ii].z, &zTail);
+            if ((zTail - aToken[ii].z) != (aToken[ii].n-1)) goto bad_color;
+        }
+        s = MIN(MAX(rgb[1] / 100.0, 0.0), 1.0);
+        l = MIN(MAX(rgb[2] / 100.0, 0.0), 1.0);
+
+        /* Normalize hue to [0,360) and compute the usual HSL->RGB
+         * intermediates. Written without libm (no fmod/fabs). */
+        h = h - ((double)(long)(h / 360.0)) * 360.0;
+        if (h < 0.0) h += 360.0;
+        c = 2.0*l - 1.0;
+        if (c < 0.0) c = -c;
+        c = (1.0 - c) * s;
+        x = h / 60.0;
+        x = x - ((double)(long)(x / 2.0)) * 2.0 - 1.0;
+        if (x < 0.0) x = -x;
+        x = c * (1.0 - x);
+        m = l - c/2.0;
+        iSext = ((int)(h / 60.0)) % 6;
+        switch (iSext) {
+            case 0: rgb[0]=c; rgb[1]=x; rgb[2]=0; break;
+            case 1: rgb[0]=x; rgb[1]=c; rgb[2]=0; break;
+            case 2: rgb[0]=0; rgb[1]=c; rgb[2]=x; break;
+            case 3: rgb[0]=0; rgb[1]=x; rgb[2]=c; break;
+            case 4: rgb[0]=x; rgb[1]=0; rgb[2]=c; break;
+            default: rgb[0]=c; rgb[1]=0; rgb[2]=x; break;
+        }
+        for (ii = 0; ii < 3; ii++) {
+            rgb[ii] = (rgb[ii] + m) * 255.0;
+        }
+    } else {
+        int isPercent = (aToken[0].z[aToken[0].n-1] == '%');
+        for (ii = 0; ii < 3; ii++) {
+            char *zTail;
+            if (isPercent) {
+                if (aToken[ii].z[aToken[ii].n-1] != '%') goto bad_color;
+                rgb[ii] = strtod(aToken[ii].z, &zTail) * 255.0 / 100.0;
+                if ((zTail - aToken[ii].z) != (aToken[ii].n-1)) goto bad_color;
+            } else {
+                rgb[ii] = (double)strtol(aToken[ii].z, &zTail, 0);
+                if ((zTail - aToken[ii].z) != aToken[ii].n) goto bad_color;
+            }
+        }
+    }
+
+    if (hasAlpha) {
+        char *zTail;
+        alpha = strtod(aToken[3].z, &zTail);
+        if (zTail == aToken[3].z) goto bad_color;
+        alpha = MIN(MAX(alpha, 0.0), 1.0);
+    }
+
+    if (alpha == 0.0) {
+        strcpy(zOut, "transparent");
+        return;
+    }
+    for (ii = 0; ii < 3; ii++) {
+        double v = rgb[ii] * alpha + 255.0 * (1.0 - alpha);
+        aN[ii] = MIN(MAX((int)(v + 0.5), 0), 255);
+    }
+    sprintf(zOut, "#%.2x%.2x%.2x", aN[0], aN[1], aN[2]);
+    return;
+
+  bad_color:
+    zOut[0] = '\0';
+    return;
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
  * doUrlCmd --
  *
  * Results:
@@ -572,7 +702,10 @@ tokenToProperty(pParse, pToken)
         {CSS_TYPE_ATTR,     4, "attr"},
         {CSS_TYPE_COUNTER,  7, "counter"},
         {CSS_TYPE_COUNTERS, 8, "counters"},
-        {-1,                3, "rgb"},
+        {-1,                3, "rgb"},       /* negative type: color   */
+        {-2,                4, "rgba"},      /* function, dispatched   */
+        {-3,                3, "hsl"},       /* to colorFuncToColor()  */
+        {-4,                4, "hsla"},
     };
 
     CssProperty *pProp = 0;
@@ -636,17 +769,27 @@ tokenToProperty(pParse, pToken)
                         nArg = strlen(zArg);
                     }
 
-                    if (functions[i].type==-1) {
-                        /* -1 means this is an RGB value. Transform to a
-                         * color string that Tcl can understand before
-			 * storing it in the properties database. The color
-			 * string will be 7 characters long exactly.
+                    if (functions[i].type < 0) {
+                        /* A negative type means this is a functional
+                         * color value - rgb(), rgba(), hsl() or hsla().
+                         * Transform to a color string that Tcl can
+                         * understand before storing it in the properties
+                         * database ("#rrggbb", or "transparent" for a
+                         * fully transparent alpha).
                          */
-                        int nAlloc = sizeof(CssProperty) + 7 + 1;
+                        int nAlloc = sizeof(CssProperty) + 11 + 1;
+                        int t = functions[i].type;
                         pProp = (CssProperty *)HtmlAlloc("CssProperty", nAlloc);
                         pProp->eType = CSS_TYPE_RAW;
                         pProp->v.zVal = (char *)&pProp[1];
-                        rgbToColor(pProp->v.zVal, zArg, nArg);
+                        if (t == -1) {
+                            rgbToColor(pProp->v.zVal, zArg, nArg);
+                        } else {
+                            colorFuncToColor(pProp->v.zVal,
+                                (t == -3 || t == -4), (t == -2 || t == -4),
+                                zArg, nArg
+                            );
+                        }
                     } else {
                         int nAlloc = sizeof(CssProperty) + nArg + 1;
                         pProp = (CssProperty *)HtmlAlloc("CssProperty", nAlloc);
@@ -2828,6 +2971,7 @@ cssSelectorPropertySetPair(pParse, pSelector, pPropertySet, freeWhat)
              case CSS_SELECTOR_ATTRHYPHEN:
              case CSS_SELECTOR_ATTRSTAR:
              case CSS_SELECTOR_ATTRHAT:
+             case CSS_SELECTOR_ATTREND:
                  spec += 100;
                  break;
 
@@ -2839,6 +2983,7 @@ cssSelectorPropertySetPair(pParse, pSelector, pPropertySet, freeWhat)
              case CSS_PSEUDOCLASS_ACTIVE:
              case CSS_PSEUDOCLASS_HOVER:
              case CSS_PSEUDOCLASS_FOCUS:
+             case CSS_PSEUDOCLASS_NTHCHILD:
                  spec += 100;
                  break;
          }
@@ -2861,7 +3006,7 @@ cssSelectorPropertySetPair(pParse, pSelector, pPropertySet, freeWhat)
 
         while (pS->pNext && (
                              (pS->eSelector >= CSS_SELECTOR_ATTR
-                              && pS->eSelector <= CSS_SELECTOR_ATTRHAT
+                              && pS->eSelector <= CSS_SELECTOR_ATTREND
                              /*
                 pS->eSelector == CSS_SELECTOR_ATTR ||
                 pS->eSelector == CSS_SELECTOR_ATTRVALUE ||
@@ -2873,7 +3018,8 @@ cssSelectorPropertySetPair(pParse, pSelector, pPropertySet, freeWhat)
                 pS->eSelector == CSS_PSEUDOCLASS_HOVER ||
                 pS->eSelector == CSS_PSEUDOCLASS_FOCUS ||
                 pS->eSelector == CSS_PSEUDOCLASS_LINK ||
-                pS->eSelector == CSS_PSEUDOCLASS_VISITED
+                pS->eSelector == CSS_PSEUDOCLASS_VISITED ||
+                pS->eSelector == CSS_PSEUDOCLASS_NTHCHILD
             )
         ) {
             pS = pS->pNext;
@@ -3070,9 +3216,16 @@ static int attrTest(eType, zString, zAttr)
         /*
          * True if the attribute value contains specified substring.
          * Ex. for class*="span", both "span4" and "xxspan" returns true.
+         * Case-insensitive, like the "=" and "~=" operators above.
          */
         case CSS_SELECTOR_ATTRSTAR: {
-          return zAttr && (strstr(zAttr, zString) != (char*) NULL);
+          int nString = strlen(zString);
+          const char *z;
+          if (!zAttr) return 0;
+          for (z = zAttr; *z; z++) {
+              if (0 == strnicmp(z, zString, nString)) return 1;
+          }
+          return 0;
         }
 
         /*
@@ -3081,7 +3234,20 @@ static int attrTest(eType, zString, zAttr)
          */
         case CSS_SELECTOR_ATTRHAT: {
           int nString = strlen(zString);
-          return zAttr && strncmp(zAttr, zString, nString) == 0;
+          return zAttr && strnicmp(zAttr, zString, nString) == 0;
+        }
+
+        /*
+         * True if the attribute value ends with the given string.
+         * Ex. for [href$=".png"], "foo.png" returns true.
+         */
+        case CSS_SELECTOR_ATTREND: {
+          int nString = strlen(zString);
+          int nAttr;
+          if (!zAttr) return 0;
+          nAttr = strlen(zAttr);
+          return nAttr >= nString &&
+              0 == strnicmp(&zAttr[nAttr-nString], zString, nString);
         }
 
         /* True if the attribute exists and matches zString up to the
@@ -3167,6 +3333,7 @@ HtmlCssSelectorTest(pSelector, pNode, dynamic_true)
             case CSS_SELECTOR_ATTRHYPHEN:
             case CSS_SELECTOR_ATTRSTAR:
             case CSS_SELECTOR_ATTRHAT:
+            case CSS_SELECTOR_ATTREND:
                 if( !attrTest(p->eSelector, p->zValue, N_ATTR(x,p->zAttr)) ){
                     return 0;
                 }
@@ -3186,14 +3353,67 @@ HtmlCssSelectorTest(pSelector, pNode, dynamic_true)
             case CSS_SELECTORCHAIN_CHILD:
                 x = N_PARENT(x);
                 break;
+            case CSS_SELECTORCHAIN_GENERALSIBLING: {
+                /* "a ~ b": match if any preceding element sibling of x
+                 * matches the remainder of the selector chain. */
+                HtmlNode *pParent = N_PARENT(x);
+                CssSelector *pNext = p->pNext;
+                int i;
+
+                if (
+                    !pParent ||
+                    ((HtmlElementNode *)pParent)->pBefore == x ||
+                    ((HtmlElementNode *)pParent)->pAfter == x
+                ) {
+                    return 0;
+                }
+                for (i = 0; N_CHILD(pParent, i) != x; i++);
+                for (i--; i >= 0; i--) {
+                    HtmlNode *pSib = N_CHILD(pParent, i);
+                    if (HtmlNodeIsText(pSib)) continue;
+                    if (HtmlCssSelectorTest(pNext, pSib, dynamic_true)) {
+                        return 1;
+                    }
+                }
+                return 0;
+            }
+
+            case CSS_PSEUDOCLASS_NTHCHILD: {
+                /* zValue holds "a b"; match if the 1-based index of x
+                 * among its element siblings equals a*k+b for some
+                 * integer k >= 0. */
+                HtmlNode *pParent = N_PARENT(x);
+                int a = 0, b = 0;
+                int idx = 0;
+                int i, d;
+                if (!pParent || !p->zValue) return 0;
+                if (2 != sscanf(p->zValue, "%d %d", &a, &b)) return 0;
+                for (i = 0; i < N_NUMCHILDREN(pParent); i++) {
+                    HtmlNode *pChild = N_CHILD(pParent, i);
+                    if (HtmlNodeIsText(pChild)) continue;
+                    idx++;
+                    if (pChild == x) break;
+                }
+                if (i >= N_NUMCHILDREN(pParent)) return 0;
+                d = idx - b;
+                if (a == 0) {
+                    if (d != 0) return 0;
+                } else if (a > 0) {
+                    if (d < 0 || (d % a) != 0) return 0;
+                } else {
+                    if (d > 0 || ((-d) % (-a)) != 0) return 0;
+                }
+                break;
+            }
+
             case CSS_SELECTORCHAIN_ADJACENT: {
                 HtmlNode *pParent = N_PARENT(x);
                 int i;
 
                 if (
-                    !pParent || 
+                    !pParent ||
                     ((HtmlElementNode *)pParent)->pBefore == x ||
-                    ((HtmlElementNode *)pParent)->pAfter == x 
+                    ((HtmlElementNode *)pParent)->pAfter == x
                 ) {
                     return 0;
                 }
@@ -3934,6 +4154,7 @@ HtmlCssSelectorToString(pSelector, pObj)
         case CSS_SELECTORCHAIN_DESCENDANT:         z = " ";       break;
         case CSS_SELECTORCHAIN_CHILD:              z = " > ";     break;
         case CSS_SELECTORCHAIN_ADJACENT:           z = " + ";     break;
+        case CSS_SELECTORCHAIN_GENERALSIBLING:     z = " ~ ";     break;
         case CSS_SELECTOR_UNIVERSAL:               z = "*";       break;
         case CSS_PSEUDOCLASS_LANG:                 z = ":lang";         break;
         case CSS_PSEUDOCLASS_FIRSTCHILD:           z = ":first-child";  break;
@@ -3983,12 +4204,25 @@ HtmlCssSelectorToString(pSelector, pObj)
                 "[", pSelector->zAttr, "*=\"", pSelector->zValue, "\"]", NULL);
             break;
         case CSS_SELECTOR_ATTRHAT:
-            Tcl_AppendStringsToObj(pObj, 
+            Tcl_AppendStringsToObj(pObj,
                 "[", pSelector->zAttr, "^=\"", pSelector->zValue, "\"]", NULL);
             break;
+        case CSS_SELECTOR_ATTREND:
+            Tcl_AppendStringsToObj(pObj,
+                "[", pSelector->zAttr, "$=\"", pSelector->zValue, "\"]", NULL);
+            break;
 
+        case CSS_PSEUDOCLASS_NTHCHILD: {
+            /* zValue holds the parsed "a b" pair. */
+            int a = 0, b = 0;
+            char zBuf[48];
+            sscanf(pSelector->zValue, "%d %d", &a, &b);
+            sprintf(zBuf, ":nth-child(%dn%+d)", a, b);
+            Tcl_AppendStringsToObj(pObj, zBuf, NULL);
+            break;
+        }
 
-        case CSS_SELECTOR_NEVERMATCH: 
+        case CSS_SELECTOR_NEVERMATCH:
             Tcl_AppendStringsToObj(pObj, "NEVERMATCH", NULL);
             break;
 

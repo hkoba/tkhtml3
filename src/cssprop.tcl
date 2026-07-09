@@ -59,7 +59,8 @@ C auto
 #
 E background-attachment scroll fixed
 E background-repeat     repeat no-repeat repeat-x repeat-y
-E border-collapse       separate collapse 
+E border-collapse       separate collapse
+E box-sizing            content-box border-box
 foreach dir [list top left bottom right] {
   E border-$dir-style none hidden dotted dashed solid 
   E border-$dir-style double groove ridge outset inset
@@ -118,7 +119,8 @@ P background-repeat border-collapse border-spacing
 P border-top-color border-right-color border-bottom-color border-left-color 
 P border-top-style border-right-style border-bottom-style border-left-style 
 P border-top-width border-right-width border-bottom-width border-left-width 
-P bottom caption-side clear clip color content counter-increment counter-reset 
+P bottom box-sizing caption-side clear clip color content counter-increment
+P counter-reset
 P cue-after cue-before cursor direction display elevation empty-cells float 
 P font-family font-size font-size-adjust font-stretch font-style font-variant 
 P font-weight height left letter-spacing line-height list-style-image

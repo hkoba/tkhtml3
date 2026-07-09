@@ -267,6 +267,7 @@ struct HtmlComputedValues {
     int iBackgroundPositionY;
 
     unsigned char eOverflow;          /* 'overflow' */
+    unsigned char eBoxSizing;         /* 'box-sizing' */
 
     int iZIndex;                      /* 'z-index'        (integer, AUTO) */
 

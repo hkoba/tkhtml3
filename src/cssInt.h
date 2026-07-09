@@ -59,6 +59,7 @@ typedef unsigned int u32;
 #define CSS_SELECTORCHAIN_DESCENDANT     1    /* eg. "a b" */
 #define CSS_SELECTORCHAIN_CHILD          2    /* eg. "a > b" */
 #define CSS_SELECTORCHAIN_ADJACENT       3    /* eg. "a + b" */
+#define CSS_SELECTORCHAIN_GENERALSIBLING 46   /* eg. "a ~ b" */
 
 /*
  * Simple selector types.
@@ -71,6 +72,7 @@ typedef unsigned int u32;
 #define CSS_SELECTOR_ATTRHYPHEN          10
 #define CSS_SELECTOR_ATTRSTAR            11
 #define CSS_SELECTOR_ATTRHAT             12
+#define CSS_SELECTOR_ATTREND             13   /* eg. [a$="val"] */
 #define CSS_SELECTOR_CLASS               44   /* eg. ".classname"   */
 #define CSS_SELECTOR_ID                  45   /* eg. "#idname"      */
 
@@ -85,6 +87,7 @@ typedef unsigned int u32;
 #define CSS_PSEUDOCLASS_ACTIVE           26
 #define CSS_PSEUDOCLASS_HOVER            27
 #define CSS_PSEUDOCLASS_FOCUS            28
+#define CSS_PSEUDOCLASS_NTHCHILD         47   /* :nth-child(an+b), zValue = "a b" */
 
 /*
 ** Pseudo-elements.
@@ -284,7 +287,7 @@ enum CssTokenType {
     CT_RSP,      CT_SEMICOLON,    CT_COMMA,     CT_COLON,      CT_PLUS,
     CT_DOT,      CT_HASH,         CT_EQUALS,    CT_TILDE,      CT_PIPE,
     CT_AT,       CT_BANG,         CT_STRING,    CT_LRP,        CT_GT,
-    CT_STAR,     CT_SLASH,        CT_HAT,
+    CT_STAR,     CT_SLASH,        CT_HAT,       CT_DOLLAR,
     CT_IDENT,     CT_FUNCTION,
 
     CT_SGML_OPEN, CT_SGML_CLOSE, CT_SYNTAX_ERROR, CT_EOF

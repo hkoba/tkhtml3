@@ -95,6 +95,7 @@ struct PropertyDef {
 static PropertyDef propdef[] = {
   PROPDEF(ENUM, BACKGROUND_ATTACHMENT, eBackgroundAttachment),
   PROPDEF(ENUM, BACKGROUND_REPEAT,     eBackgroundRepeat),
+  PROPDEF(ENUM, BOX_SIZING,            eBoxSizing),
   PROPDEF(ENUM, BORDER_BOTTOM_STYLE,   eBorderBottomStyle),
   PROPDEF(ENUM, BORDER_LEFT_STYLE,     eBorderLeftStyle),
   PROPDEF(ENUM, BORDER_RIGHT_STYLE,    eBorderRightStyle),
@@ -1607,11 +1608,24 @@ propertyValuesSetImage(p, pImVar, pProp)
             break;
 
         case CSS_TYPE_URL:
-        case CSS_TYPE_STRING: 
-        case CSS_TYPE_RAW: 
             zUrl = pProp->v.zVal;
             break;
- 
+
+        case CSS_TYPE_STRING:
+        case CSS_TYPE_RAW:
+            /* An unrecognized functional notation - e.g. CSS3
+             * "linear-gradient(...)" or vendor-prefixed variants - ends
+             * up here as a raw string. Treating it as an image URL both
+             * causes a bogus image fetch and, worse, marks the property
+             * as successfully set, which blocks the cascade from falling
+             * back to an earlier valid declaration. Reject such values.
+             * (attr() values are resolved before this point, so a '('
+             * here can only come from an unsupported function.)
+             */
+            if (strchr(pProp->v.zVal, '(')) return 1;
+            zUrl = pProp->v.zVal;
+            break;
+
         default:
             return 1;
     }
