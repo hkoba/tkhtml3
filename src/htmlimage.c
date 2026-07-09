@@ -228,7 +228,11 @@ photoputblock(interp, handle, blockPtr, x, y, width, height, compRule)
     int height;
     int compRule;
 {
+#if TCL_MAJOR_VERSION >= 9
+    Tk_PhotoPutBlock(interp, handle, blockPtr, x, y, width, height, compRule);
+#else
     Tk_PhotoPutBlock(handle, blockPtr, x, y, width, height);
+#endif
 }
 
 static void
@@ -308,7 +312,7 @@ getImageCompressed(pImage)
         Tcl_IncrRefCount(apObj[1]);
         Tcl_IncrRefCount(apObj[2]);
         if (TCL_OK == Tcl_EvalObjv(interp, 3, apObj, TCL_EVAL_GLOBAL)) {
-	    int nData;
+	    Tcl_Size nData;
 	    Tcl_Obj *pData = Tcl_GetObjResult(interp);
 	    Tcl_GetByteArrayFromObj(pData, &nData);
 	    if (nData>0){
@@ -438,7 +442,7 @@ HtmlImageServerGet(p, zUrl)
             Tcl_Obj *pEval;
             Tcl_Obj *pResult;
             int rc;
-            int nObj;
+            Tcl_Size nObj;
             Tcl_Obj **apObj = 0;
             Tk_Image img;
            
@@ -1083,7 +1087,7 @@ HtmlImageAlphaChannel(pImage)
 
         Tcl_Obj *pCompressed = getImageCompressed(pImage);
         unsigned char *zCompressed;
-        int nCompressed;
+        Tcl_Size nCompressed;
         int i;
         assert(pCompressed);
 
@@ -1435,7 +1439,7 @@ HtmlImageServerReport(clientData, interp, objc, objv)
     ClientData clientData;             /* The HTML widget data structure */
     Tcl_Interp *interp;                /* Current interpreter. */
     int objc;                          /* Number of arguments. */
-    Tcl_Obj *CONST objv[];             /* Argument strings. */
+    Tcl_Obj *const objv[];             /* Argument strings. */
 {
     HtmlTree *pTree = (HtmlTree *)clientData;
 

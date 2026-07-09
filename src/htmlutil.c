@@ -145,7 +145,7 @@ execInst(clientData, interp, objc, objv)
     ClientData clientData;
     Tcl_Interp *interp;                /* Current interpreter. */
     int objc;                          /* Number of arguments. */
-    Tcl_Obj *CONST objv[];             /* Argument strings. */
+    Tcl_Obj *const objv[];             /* Argument strings. */
 {
     InstCommand *p = (InstCommand *)clientData;
     InstGlobal *pGlobal = p->pGlobal;
@@ -193,7 +193,7 @@ instCommand(clientData, interp, objc, objv)
     ClientData clientData;             /* Pointer to InstGlobal structure */
     Tcl_Interp *interp;                /* Current interpreter. */
     int objc;                          /* Number of arguments. */
-    Tcl_Obj *CONST objv[];             /* Argument strings. */
+    Tcl_Obj *const objv[];             /* Argument strings. */
 {
     InstGlobal *pGlobal = (InstGlobal *)clientData;
     Tcl_Command token;
@@ -232,7 +232,7 @@ instVectors(clientData, interp, objc, objv)
     ClientData clientData;             /* Unused */
     Tcl_Interp *interp;                /* Current interpreter. */
     int objc;                          /* Number of arguments. */
-    Tcl_Obj *CONST objv[];             /* Argument strings. */
+    Tcl_Obj *const objv[];             /* Argument strings. */
 {
     InstGlobal *pGlobal = (InstGlobal *)clientData;
     Tcl_Obj *pRet;
@@ -276,7 +276,7 @@ instZero(clientData, interp, objc, objv)
     ClientData clientData;             /* InstGlobal structure */
     Tcl_Interp *interp;                /* Current interpreter. */
     int objc;                          /* Number of arguments. */
-    Tcl_Obj *CONST objv[];             /* Argument strings. */
+    Tcl_Obj *const objv[];             /* Argument strings. */
 {
     InstGlobal *pGlobal = (InstGlobal *)clientData;
     InstCommand *p;
@@ -338,7 +338,7 @@ instrument_objcmd(clientData, interp, objc, objv)
     ClientData clientData;             /* Unused */
     Tcl_Interp *interp;                /* Current interpreter. */
     int objc;                          /* Number of arguments. */
-    Tcl_Obj *CONST objv[];             /* Argument strings. */
+    Tcl_Obj *const objv[];             /* Argument strings. */
 {
     int iChoice;
     struct SubCmd {

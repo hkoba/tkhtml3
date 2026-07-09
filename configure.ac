@@ -19,7 +19,7 @@ dnl	to configure the system for the local environment.
 # so you can encode the package version directly into the source files.
 #-----------------------------------------------------------------------
 
-AC_INIT([Tkhtml], [3.0])
+AC_INIT([Tkhtml],[3.0])
 
 #--------------------------------------------------------------------
 # Call TEA_INIT as the first TEA_ macro to set up initial vars.
@@ -71,28 +71,28 @@ TEA_SETUP_COMPILER
 # and PKG_TCL_SOURCES.
 #-----------------------------------------------------------------------
 
-TEA_ADD_SOURCES([css.c])
-TEA_ADD_SOURCES([cssdynamic.c])
-TEA_ADD_SOURCES([cssparser.c])
-TEA_ADD_SOURCES([csssearch.c])
-TEA_ADD_SOURCES([htmldraw.c])
-TEA_ADD_SOURCES([htmlfloat.c])
-TEA_ADD_SOURCES([htmlhash.c])
-TEA_ADD_SOURCES([htmlimage.c])
-TEA_ADD_SOURCES([htmlinline.c])
-TEA_ADD_SOURCES([htmllayout.c])
-TEA_ADD_SOURCES([htmlparse.c])
-TEA_ADD_SOURCES([htmlprop.c])
-TEA_ADD_SOURCES([htmlstyle.c])
-TEA_ADD_SOURCES([htmltagdb.c])
-TEA_ADD_SOURCES([htmltable.c])
-TEA_ADD_SOURCES([htmltcl.c])
-TEA_ADD_SOURCES([htmltree.c])
-TEA_ADD_SOURCES([swproc.c])
-TEA_ADD_SOURCES([restrack.c])
-TEA_ADD_SOURCES([htmldecode.c])
-TEA_ADD_SOURCES([htmltext.c])
-TEA_ADD_SOURCES([htmlutil.c])
+TEA_ADD_SOURCES([src/css.c])
+TEA_ADD_SOURCES([src/cssdynamic.c])
+TEA_ADD_SOURCES([src/cssparser.c])
+TEA_ADD_SOURCES([src/csssearch.c])
+TEA_ADD_SOURCES([src/htmldraw.c])
+TEA_ADD_SOURCES([src/htmlfloat.c])
+TEA_ADD_SOURCES([src/htmlhash.c])
+TEA_ADD_SOURCES([src/htmlimage.c])
+TEA_ADD_SOURCES([src/htmlinline.c])
+TEA_ADD_SOURCES([src/htmllayout.c])
+TEA_ADD_SOURCES([src/htmlparse.c])
+TEA_ADD_SOURCES([src/htmlprop.c])
+TEA_ADD_SOURCES([src/htmlstyle.c])
+TEA_ADD_SOURCES([src/htmltagdb.c])
+TEA_ADD_SOURCES([src/htmltable.c])
+TEA_ADD_SOURCES([src/htmltcl.c])
+TEA_ADD_SOURCES([src/htmltree.c])
+TEA_ADD_SOURCES([src/swproc.c])
+TEA_ADD_SOURCES([src/restrack.c])
+TEA_ADD_SOURCES([src/htmldecode.c])
+TEA_ADD_SOURCES([src/htmltext.c])
+TEA_ADD_SOURCES([src/htmlutil.c])
 
 TEA_ADD_HEADERS([])
 TEA_ADD_INCLUDES([])
@@ -208,4 +208,5 @@ TEA_PROG_WISH
 # which require substituting th AC variables in.  Include these here.
 #--------------------------------------------------------------------
 
-AC_OUTPUT([Makefile])
+AC_CONFIG_FILES([Makefile])
+AC_OUTPUT

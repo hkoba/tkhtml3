@@ -504,7 +504,7 @@ eventDispatchCmd(clientData, pTcl, objc, objv)
     ClientData clientData;
     Tcl_Interp *pTcl;
     int objc;
-    Tcl_Obj *CONST objv[];             /* Argument strings. */
+    Tcl_Obj *const objv[];             /* Argument strings. */
 {
     SeeInterp *pTclSeeInterp = (SeeInterp *)clientData;
     struct SEE_interpreter *p = &pTclSeeInterp->interp;
@@ -939,7 +939,7 @@ eventDumpCmd(clientData, pTcl, objc, objv)
     ClientData clientData;
     Tcl_Interp *pTcl;
     int objc;
-    Tcl_Obj *CONST objv[];             /* Argument strings. */
+    Tcl_Obj *const objv[];             /* Argument strings. */
 {
     SeeTclObject *p;
     SeeInterp *pTclSeeInterp = (SeeInterp *)clientData;

@@ -741,8 +741,8 @@ place_out:
 void 
 HtmlFloatListLog(pTree, zCaption, zNode, pList)
     HtmlTree *pTree;
-    CONST char *zCaption;
-    CONST char *zNode;
+    const char *zCaption;
+    const char *zNode;
     HtmlFloatList *pList;
 {
     char zBuf[1024];

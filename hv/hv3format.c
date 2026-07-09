@@ -430,7 +430,7 @@ tclSeeFormat(clientData, interp, objc, objv)
     ClientData clientData;             /* Not used */
     Tcl_Interp *interp;                /* Current interpreter. */
     int objc;                          /* Number of arguments. */
-    Tcl_Obj *CONST objv[];             /* Argument strings. */
+    Tcl_Obj *const objv[];             /* Argument strings. */
 {
     JsBlob blob;
     Tcl_Obj *pScript;

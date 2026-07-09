@@ -196,7 +196,7 @@ HtmlMarkupFlags(markup)
  *
  *---------------------------------------------------------------------------
  */
-CONST char *
+const char *
 HtmlMarkupName(markup)
     int markup;
 {

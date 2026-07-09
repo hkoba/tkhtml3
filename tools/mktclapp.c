@@ -739,7 +739,7 @@ static char zHeader[] =
 "#define ET_TCLARGS "
      "ClientData clientData,Tcl_Interp*interp,int argc,char**argv\n"
 "#define ET_OBJARGS "
-     "ClientData clientData,Tcl_Interp*interp,int objc,Tcl_Obj *CONST objv[]\n"
+     "ClientData clientData,Tcl_Interp*interp,int objc,Tcl_Obj *const objv[]\n"
 "#endif\n"
 ;
 
@@ -1050,7 +1050,7 @@ int main(int argc, char **argv){
     "#define ET_TCLARGS "
        "ClientData clientData,Tcl_Interp*interp,int argc,char**argv\n"
     "#define ET_OBJARGS "
-       "ClientData clientData,Tcl_Interp*interp,int objc,Tcl_Obj*CONST objv[]\n"
+       "ClientData clientData,Tcl_Interp*interp,int objc,Tcl_Obj*const objv[]\n"
     "#endif\n"   
   );
   printf("#define ET_ENABLE_OBJ %d\n", enableObj);

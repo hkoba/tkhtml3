@@ -357,7 +357,7 @@ proc genStubs::makeDecl {name decl index} {
 	append line " "
 	set pad 0
     }
-    append line "$fname _ANSI_ARGS_("
+    append line "$fname "
 
     set arg1 [lindex $args 0]
     switch -exact $arg1 {
@@ -389,7 +389,7 @@ proc genStubs::makeDecl {name decl index} {
     }
     append text $line
     
-    append text ");\n"
+    append text ";\n"
     return $text
 }
 
