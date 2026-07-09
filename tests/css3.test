@@ -171,4 +171,45 @@ tcltest::test css3-3.1 {box-sizing computed value} -body {
   list [property [idnode d] box-sizing] [property [idnode e] box-sizing]
 } -result {border-box content-box}
 
+#--------------------------------------------------------------------------
+# css3-4.*: border-radius parsing.
+#
+tcltest::test css3-4.0 {border-radius shorthand, one value} -body {
+  .h reset
+  .h style { .a { border-radius: 4px } }
+  .h parse -final {<div class="a" id=d>x</div>}
+  list [property [idnode d] border-top-left-radius] \
+       [property [idnode d] border-top-right-radius] \
+       [property [idnode d] border-bottom-right-radius] \
+       [property [idnode d] border-bottom-left-radius]
+} -result {4px 4px 4px 4px}
+
+tcltest::test css3-4.1 {border-radius shorthand, four values} -body {
+  .h reset
+  .h style { .a { border-radius: 1px 2px 3px 4px } }
+  .h parse -final {<div class="a" id=d>x</div>}
+  list [property [idnode d] border-top-left-radius] \
+       [property [idnode d] border-top-right-radius] \
+       [property [idnode d] border-bottom-right-radius] \
+       [property [idnode d] border-bottom-left-radius]
+} -result {1px 2px 3px 4px}
+
+tcltest::test css3-4.2 {border-radius two values maps TL/BR TR/BL} -body {
+  .h reset
+  .h style { .a { border-radius: 6px 0 } }
+  .h parse -final {<div class="a" id=d>x</div>}
+  list [property [idnode d] border-top-left-radius] \
+       [property [idnode d] border-top-right-radius] \
+       [property [idnode d] border-bottom-right-radius] \
+       [property [idnode d] border-bottom-left-radius]
+} -result {6px 0px 6px 0px}
+
+tcltest::test css3-4.3 {longhand radius property} -body {
+  .h reset
+  .h style { .a { border-top-left-radius: 5px } }
+  .h parse -final {<div class="a" id=d>x</div>}
+  list [property [idnode d] border-top-left-radius] \
+       [property [idnode d] border-bottom-right-radius]
+} -result {5px 0px}
+
 finish_test

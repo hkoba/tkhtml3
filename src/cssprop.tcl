@@ -135,13 +135,16 @@ P table-layout text-align text-decoration text-indent text-shadow text-transform
 P top unicode-bidi vertical-align visibility voice-family volume white-space 
 P widows width word-spacing z-index 
 
+P border-top-left-radius border-top-right-radius
+P border-bottom-right-radius border-bottom-left-radius
+
 P -tkhtml-replacement-image
 P -tkhtml-ordered-list-start
 P -tkhtml-ordered-list-value
 
 S background border border-top border-right border-bottom border-left
 S border-color border-style border-width cue font padding outline margin
-S list-style
+S list-style border-radius
 
 # We treat property 'background-position' as a composite property that sets
 # invented properties background-position-x and background-position-y.

@@ -127,6 +127,14 @@ static PropertyDef propdef[] = {
    * value is supported at the moment, which is enough to support
    * the html 4.01 cellspacing attribute.
    */
+  /* The radii use the BORDERWIDTH type: pixel lengths only, no mask
+   * bit required (all 32 PROP_MASK bits are in use). em/ex radii are
+   * rejected (the declaration falls back), % is not supported.
+   */
+  PROPDEF(BORDERWIDTH, BORDER_TOP_LEFT_RADIUS,     iBorderTopLeftRadius),
+  PROPDEF(BORDERWIDTH, BORDER_TOP_RIGHT_RADIUS,    iBorderTopRightRadius),
+  PROPDEF(BORDERWIDTH, BORDER_BOTTOM_RIGHT_RADIUS, iBorderBottomRightRadius),
+  PROPDEF(BORDERWIDTH, BORDER_BOTTOM_LEFT_RADIUS,  iBorderBottomLeftRadius),
   PROPDEFM(LENGTH, BORDER_SPACING,        iBorderSpacing,    0),
   PROPDEFM(LENGTH, BACKGROUND_POSITION_X, iBackgroundPositionX, 0),
   PROPDEFM(LENGTH, BACKGROUND_POSITION_Y, iBackgroundPositionY, 0),
@@ -284,7 +292,11 @@ static int nolayoutlist[] = {
     CSS_PROPERTY_BACKGROUND_REPEAT,
     CSS_PROPERTY_VISIBILITY,
     CSS_PROPERTY_BACKGROUND_POSITION_X,
-    CSS_PROPERTY_BACKGROUND_POSITION_Y
+    CSS_PROPERTY_BACKGROUND_POSITION_Y,
+    CSS_PROPERTY_BORDER_TOP_LEFT_RADIUS,
+    CSS_PROPERTY_BORDER_TOP_RIGHT_RADIUS,
+    CSS_PROPERTY_BORDER_BOTTOM_RIGHT_RADIUS,
+    CSS_PROPERTY_BORDER_BOTTOM_LEFT_RADIUS
 };
 
 

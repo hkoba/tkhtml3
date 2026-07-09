@@ -247,6 +247,10 @@ struct HtmlComputedValues {
     HtmlFourSides margin;             /* 'margin'         (pixels, %, AUTO)   */
 
     HtmlFourSides border;             /* 'border-width'   (pixels)            */
+    int iBorderTopLeftRadius;         /* 'border-top-left-radius' (pixels) */
+    int iBorderTopRightRadius;        /* 'border-top-right-radius' (pixels) */
+    int iBorderBottomRightRadius;     /* 'border-bottom-right-radius' (px) */
+    int iBorderBottomLeftRadius;      /* 'border-bottom-left-radius' (px) */
     unsigned char eBorderTopStyle;    /* 'border-top-style' */
     unsigned char eBorderRightStyle;  /* 'border-right-style' */
     unsigned char eBorderBottomStyle; /* 'border-bottom-style' */

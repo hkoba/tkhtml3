@@ -977,7 +977,7 @@ propertySetGet(p, i)
     int i;                     /* Property id (i.e CSS_PROPERTY_WIDTH) */
 {
     int j;
-    assert( i<128 && i>=0 );
+    assert( i<=CSS_PROPERTY_MAX_PROPERTY && i>=0 );
 
     for (j = 0; j < p->n; j++) {
         if (i == p->a[j].eProp) {
@@ -1010,7 +1010,7 @@ propertySetAdd(p, i, v)
 {
     int nBytes;
 
-    assert( i<128 && i>=0 );
+    assert( i<=CSS_PROPERTY_MAX_PROPERTY && i>=0 );
     assert(!p->a || p->n > 0);
 
     /* Note: We used to avoid inserting duplicate properties into a
@@ -2125,6 +2125,20 @@ static void propertySetAddShortcutBorderColor(p, prop, v)
             propertySetAdd(p, CSS_PROPERTY_MARGIN_BOTTOM, apProp[2]);
             propertySetAdd(p, CSS_PROPERTY_MARGIN_LEFT, apProp[3]);
             break;
+        case CSS_SHORTCUTPROPERTY_BORDER_RADIUS:
+            /* The 1-4 value expansion for corners follows the same
+             * index pattern as for sides: TL, TR, BR, BL. (The CSS3
+             * elliptical "/" syntax is not supported; a "/" item
+             * becomes an invalid radius value and is dropped at
+             * computed-value time.)
+             */
+            propertySetAdd(p, CSS_PROPERTY_BORDER_TOP_LEFT_RADIUS, apProp[0]);
+            propertySetAdd(p, CSS_PROPERTY_BORDER_TOP_RIGHT_RADIUS, apProp[1]);
+            propertySetAdd(p, CSS_PROPERTY_BORDER_BOTTOM_RIGHT_RADIUS,
+                apProp[2]);
+            propertySetAdd(p, CSS_PROPERTY_BORDER_BOTTOM_LEFT_RADIUS,
+                apProp[3]);
+            break;
     }
 }
 
@@ -2709,6 +2723,7 @@ HtmlCssDeclaration(pParse, pProp, pExpr, isImportant)
         case CSS_SHORTCUTPROPERTY_BORDER_WIDTH:
         case CSS_SHORTCUTPROPERTY_PADDING:
         case CSS_SHORTCUTPROPERTY_MARGIN:
+        case CSS_SHORTCUTPROPERTY_BORDER_RADIUS:
             propertySetAddShortcutBorderColor(*ppPropertySet, prop, pExpr);
             break;
         case CSS_SHORTCUTPROPERTY_BACKGROUND:

@@ -1782,7 +1782,7 @@ fill_rectangle(win, d, xcolor, x, y, w, h)
         Display *display = Tk_Display(win);
         GC gc;
         XGCValues gc_values;
-    
+
         gc_values.foreground = xcolor->pixel;
         gc = Tk_GetGC(win, GCForeground, &gc_values);
         XFillRectangle(display, d, gc, x, y, w, h);
@@ -1790,6 +1790,93 @@ fill_rectangle(win, d, xcolor, x, y, w, h)
     }
 
     return 0;
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
+ * fill_round_rectangle --
+ *
+ *     Fill a rectangle with (possibly different) rounded corners.
+ *     Used to draw boxes with the CSS3 'border-radius' properties.
+ *     The corners are drawn with XFillArc (no anti-aliasing).
+ *
+ * Results:
+ *     None.
+ *
+ * Side effects:
+ *     Draws to drawable d.
+ *
+ *---------------------------------------------------------------------------
+ */
+static void
+fill_round_rectangle(win, d, xcolor, x, y, w, h, rtl, rtr, rbr, rbl)
+    Tk_Window win;
+    Drawable d;
+    XColor *xcolor;
+    int x; int y;
+    int w; int h;
+    int rtl; int rtr;          /* Top-left, top-right radius (pixels) */
+    int rbr; int rbl;          /* Bottom-right, bottom-left radius */
+{
+    Display *display = Tk_Display(win);
+    GC gc;
+    XGCValues gc_values;
+    int rmax = MIN(w, h) / 2;
+    int maxT;                  /* MAX(rtl, rtr) */
+    int maxB;                  /* MAX(rbl, rbr) */
+
+    if (w <= 0 || h <= 0) return;
+
+    rtl = MIN(MAX(rtl, 0), rmax);
+    rtr = MIN(MAX(rtr, 0), rmax);
+    rbr = MIN(MAX(rbr, 0), rmax);
+    rbl = MIN(MAX(rbl, 0), rmax);
+    maxT = MAX(rtl, rtr);
+    maxB = MAX(rbl, rbr);
+
+    gc_values.foreground = xcolor->pixel;
+    gc = Tk_GetGC(win, GCForeground, &gc_values);
+
+    /* Central band */
+    XFillRectangle(display, d, gc, x, y + maxT, w, h - maxT - maxB);
+
+    /* Top band between the two top corners, plus fillers for uneven
+     * radii. Same for the bottom band. */
+    XFillRectangle(display, d, gc, x + rtl, y, w - rtl - rtr, maxT);
+    if (rtl < maxT) {
+        XFillRectangle(display, d, gc, x, y + rtl, rtl, maxT - rtl);
+    }
+    if (rtr < maxT) {
+        XFillRectangle(display, d, gc, x + w - rtr, y + rtr, rtr, maxT - rtr);
+    }
+    XFillRectangle(display, d, gc, x + rbl, y + h - maxB, w - rbl - rbr, maxB);
+    if (rbl < maxB) {
+        XFillRectangle(display, d, gc, x, y + h - maxB, rbl, maxB - rbl);
+    }
+    if (rbr < maxB) {
+        XFillRectangle(display, d, gc, x + w - rbr, y + h - maxB, rbr,
+            maxB - rbr);
+    }
+
+    /* Corner quadrants (angles are in 1/64 degree, counter-clockwise
+     * from 3 o'clock). */
+    if (rtl > 0) {
+        XFillArc(display, d, gc, x, y, 2*rtl, 2*rtl, 90*64, 90*64);
+    }
+    if (rtr > 0) {
+        XFillArc(display, d, gc, x + w - 2*rtr, y, 2*rtr, 2*rtr, 0, 90*64);
+    }
+    if (rbr > 0) {
+        XFillArc(display, d, gc, x + w - 2*rbr, y + h - 2*rbr,
+            2*rbr, 2*rbr, 270*64, 90*64);
+    }
+    if (rbl > 0) {
+        XFillArc(display, d, gc, x, y + h - 2*rbl, 2*rbl, 2*rbl,
+            180*64, 90*64);
+    }
+
+    Tk_FreeGC(display, gc);
 }
 
 /*
@@ -2020,6 +2107,8 @@ drawBox(pQuery, pItem, pBox, drawable, x, y, w, h, xview, yview, flags)
     XColor *lc = pV->cBorderLeftColor->xcolor;
     XColor *oc = pV->cOutlineColor->xcolor;
 
+    int isRounded = 0;
+
     /* int isInline = (pV->eDisplay == CSS_CONST_INLINE); */
     if (pItem) {
         setClippingDrawable(pQuery, pItem, &drawable, &x, &y);
@@ -2033,18 +2122,59 @@ drawBox(pQuery, pItem, pBox, drawable, x, y, w, h, xview, yview, flags)
         rw = 0;
     }
 
+    /* CSS3 'border-radius' support: if the box has a rounded corner
+     * and an opaque background color, paint the border and background
+     * as rounded rectangles here and skip the square background fill
+     * and border quads below. Boxes with radii but no background
+     * color, and inline boxes split across lines, fall back to square
+     * rendering. All four borders are drawn in the top border color
+     * (per-side colors are not supported on rounded boxes).
+     */
+    if (0 == (flags & DRAWBOX_NOBACKGROUND)
+     && pV->cBackgroundColor->xcolor
+     && 0 == (pBox->flags & (CANVAS_BOX_OPEN_LEFT|CANVAS_BOX_OPEN_RIGHT))
+     && (pV->iBorderTopLeftRadius > 0 || pV->iBorderTopRightRadius > 0 ||
+         pV->iBorderBottomRightRadius > 0 || pV->iBorderBottomLeftRadius > 0)
+    ) {
+        int bx = x + pBox->x;
+        int by = y + pBox->y;
+        int rtl = pV->iBorderTopLeftRadius;
+        int rtr = pV->iBorderTopRightRadius;
+        int rbr = pV->iBorderBottomRightRadius;
+        int rbl = pV->iBorderBottomLeftRadius;
+
+        isRounded = 1;
+        if ((tw || bw || rw || lw) && tc && 0 == (flags & DRAWBOX_NOBORDER)) {
+            fill_round_rectangle(pTree->tkwin, drawable, tc,
+                bx, by, pBox->w, pBox->h, rtl, rtr, rbr, rbl
+            );
+            fill_round_rectangle(pTree->tkwin, drawable,
+                pV->cBackgroundColor->xcolor,
+                bx + lw, by + tw, pBox->w - lw - rw, pBox->h - tw - bw,
+                MAX(0, rtl - MAX(lw, tw)), MAX(0, rtr - MAX(rw, tw)),
+                MAX(0, rbr - MAX(rw, bw)), MAX(0, rbl - MAX(lw, bw))
+            );
+        } else {
+            fill_round_rectangle(pTree->tkwin, drawable,
+                pV->cBackgroundColor->xcolor,
+                bx, by, pBox->w, pBox->h, rtl, rtr, rbr, rbl
+            );
+        }
+    }
+
     /* Solid background, if required */
-    if (0 == (flags & DRAWBOX_NOBACKGROUND) && pV->cBackgroundColor->xcolor) {
+    if (!isRounded &&
+        0 == (flags & DRAWBOX_NOBACKGROUND) && pV->cBackgroundColor->xcolor) {
         int boxw = pBox->w + MIN((x + pBox->x), 0);
         int boxh = pBox->h + MIN((y + pBox->y), 0);
-        fill_rectangle(pTree->tkwin, 
+        fill_rectangle(pTree->tkwin,
             drawable, pV->cBackgroundColor->xcolor,
             MAX(0, x + pBox->x), MAX(0, y + pBox->y),
             MIN(boxw, w), MIN(boxh, h)
         );
     }
 
-    if (0 == (flags & DRAWBOX_NOBORDER)) {
+    if (0 == (flags & DRAWBOX_NOBORDER) && !isRounded) {
         /* Top border */
         if (tw > 0 && tc) {
             fill_quad(pQuery, pTree->tkwin, drawable, tc,
