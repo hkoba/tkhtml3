@@ -1,0 +1,186 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+env:
+  # 24-bit depth matters: the acid2 checks compare exact pixel colors.
+  XVFB: xvfb-run -a -s "-screen 0 1280x1024x24"
+
+jobs:
+  test-tcl86:
+    name: Ubuntu / Tcl-Tk 8.6
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tcl-dev tk-dev xvfb fonts-dejavu-core
+
+      - name: Configure and build
+        run: |
+          mkdir bld
+          cd bld
+          ../configure --with-tcl=/usr/lib/tcl8.6 --with-tk=/usr/lib/tk8.6
+          make CFLAGS="-fPIC -O2"
+
+      - name: Run the test suite
+        env:
+          TCLLIBPATH: ${{ github.workspace }}/bld
+        run: $XVFB wish tests/all.tcl
+
+      - name: Run standalone test files
+        env:
+          TCLLIBPATH: ${{ github.workspace }}/bld
+        run: |
+          $XVFB wish tests/syntax.test
+          $XVFB wish tests/reset.test
+          $XVFB wish tests/tkt_gh3.test
+
+      - name: Acid2 pixel comparison
+        env:
+          TCLLIBPATH: ${{ github.workspace }}/bld
+        run: $XVFB wish tests/acid2_check.tcl
+
+      - name: Acid2 viewer app self-check
+        env:
+          TCLLIBPATH: ${{ github.workspace }}/bld
+        run: $XVFB wish tools/acid2.tcl -check
+
+      - name: Render bootstrap 2 snapshot pages
+        env:
+          TCLLIBPATH: ${{ github.workspace }}/bld
+        run: |
+          mkdir -p snapshots
+          for page in buttons grid tables forms components typography navbar; do
+            $XVFB wish tests/snapshot.tcl -width 1000 -full 1 \
+                tests/bootstrap/$page.html snapshots/$page.png
+          done
+
+      - name: Upload bootstrap snapshots
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap-snapshots-tcl86
+          path: snapshots/
+
+      - name: Upload acid2 failure image
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acid2-failed-tcl86
+          path: acid2_failed.png
+          if-no-files-found: ignore
+
+  test-tcl90:
+    name: Ubuntu / Tcl-Tk 9.0 (built from source)
+    runs-on: ubuntu-latest
+    env:
+      TCLTK_VERSION: 9.0.2
+      TCLTK_PREFIX: /home/runner/tcltk9
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y xvfb fonts-dejavu-core \
+              libx11-dev libxext-dev libxft-dev
+
+      - name: Cache Tcl/Tk ${{ env.TCLTK_VERSION }}
+        id: cache-tcltk
+        uses: actions/cache@v4
+        with:
+          path: ${{ env.TCLTK_PREFIX }}
+          key: tcltk-${{ env.TCLTK_VERSION }}-${{ runner.os }}
+
+      - name: Build Tcl/Tk ${{ env.TCLTK_VERSION }}
+        if: steps.cache-tcltk.outputs.cache-hit != 'true'
+        run: |
+          curl -fsSL -o tcl.tar.gz \
+              https://prdownloads.sourceforge.net/tcl/tcl$TCLTK_VERSION-src.tar.gz
+          curl -fsSL -o tk.tar.gz \
+              https://prdownloads.sourceforge.net/tcl/tk$TCLTK_VERSION-src.tar.gz
+          tar xzf tcl.tar.gz
+          tar xzf tk.tar.gz
+          (cd tcl$TCLTK_VERSION/unix &&
+              ./configure --prefix=$TCLTK_PREFIX && make -j2 && make install)
+          (cd tk$TCLTK_VERSION/unix &&
+              ./configure --prefix=$TCLTK_PREFIX --with-tcl=$TCLTK_PREFIX/lib \
+              && make -j2 && make install)
+
+      - name: Configure and build
+        run: |
+          mkdir bld
+          cd bld
+          ../configure --with-tcl=$TCLTK_PREFIX/lib --with-tk=$TCLTK_PREFIX/lib
+          make CFLAGS="-fPIC -O2"
+
+      - name: Run the test suite
+        env:
+          TCLLIBPATH: ${{ github.workspace }}/bld
+        run: $XVFB $TCLTK_PREFIX/bin/wish9.0 tests/all.tcl
+
+      - name: Run standalone test files
+        env:
+          TCLLIBPATH: ${{ github.workspace }}/bld
+        run: |
+          $XVFB $TCLTK_PREFIX/bin/wish9.0 tests/syntax.test
+          $XVFB $TCLTK_PREFIX/bin/wish9.0 tests/reset.test
+          $XVFB $TCLTK_PREFIX/bin/wish9.0 tests/tkt_gh3.test
+
+      - name: Acid2 pixel comparison
+        env:
+          TCLLIBPATH: ${{ github.workspace }}/bld
+        run: $XVFB $TCLTK_PREFIX/bin/wish9.0 tests/acid2_check.tcl
+
+      - name: Acid2 viewer app self-check
+        env:
+          TCLLIBPATH: ${{ github.workspace }}/bld
+        run: $XVFB $TCLTK_PREFIX/bin/wish9.0 tools/acid2.tcl -check
+
+      - name: Upload acid2 failure image
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: acid2-failed-tcl90
+          path: acid2_failed.png
+          if-no-files-found: ignore
+
+  # Integration smoke test: run the minhtmltk0 test suite against the
+  # freshly built widget. Non-blocking, since minhtmltk0 evolves in its
+  # own repository.
+  minhtmltk0-integration:
+    name: minhtmltk0 integration (non-blocking)
+    runs-on: ubuntu-latest
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check out minhtmltk0
+        uses: actions/checkout@v4
+        with:
+          repository: hkoba/minhtmltk0
+          path: minhtmltk0
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tcl-dev tk-dev xvfb fonts-dejavu-core \
+              tcllib tklib tclx
+
+      - name: Configure and build
+        run: |
+          mkdir bld
+          cd bld
+          ../configure --with-tcl=/usr/lib/tcl8.6 --with-tk=/usr/lib/tk8.6
+          make CFLAGS="-fPIC -O2"
+
+      - name: Run the minhtmltk0 test suite
+        env:
+          TCLLIBPATH: ${{ github.workspace }}/bld
+        run: |
+          cd minhtmltk0
+          $XVFB tests/all.tcl

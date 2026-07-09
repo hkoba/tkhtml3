@@ -1,5 +1,7 @@
 # Tkhtml3 — HTML rendering widget for Tcl/Tk
 
+[![CI](https://github.com/hkoba/tkhtml3/actions/workflows/ci.yml/badge.svg)](https://github.com/hkoba/tkhtml3/actions/workflows/ci.yml)
+
 This is a maintained fork of [Tkhtml3](http://tkhtml.tcl.tk/), the HTML
 and CSS rendering widget for Tcl/Tk. On this branch the widget:
 
@@ -102,6 +104,28 @@ TCLLIBPATH=$PWD/bld wish tests/snapshot.tcl -full 1 \
 buttons, tables, forms, typography, alerts, navbar) used for visual
 regression work with `tests/snapshot.tcl`. `tests/KNOWN-FAILURES.md`
 documents the history of the test suite and the known limitations.
+
+All test drivers exit non-zero when a test fails, so they can be used
+directly in CI pipelines.
+
+## Continuous integration
+
+`.github/workflows/ci.yml` runs on every push and pull request:
+
+* **Ubuntu / Tcl-Tk 8.6** — builds against the distribution packages,
+  runs the full test suite, the Acid2 pixel comparison, the viewer
+  app self-check (`tools/acid2.tcl -check`) and renders the Bootstrap
+  component pages, uploading the PNGs as a build artifact for visual
+  inspection.
+* **Ubuntu / Tcl-Tk 9.0** — same checks against Tcl/Tk 9.0 built from
+  source (cached between runs).
+* **minhtmltk0 integration** (non-blocking) — runs the test suite of
+  the [minhtmltk0](https://github.com/hkoba/minhtmltk0) webview against
+  the freshly built widget.
+
+Everything runs under `xvfb-run` with a 24-bit screen; the Acid2 face
+comparison is font-independent (the compared 168x168 region contains
+no text), so it is stable across machines.
 
 ## Known limitations
 
