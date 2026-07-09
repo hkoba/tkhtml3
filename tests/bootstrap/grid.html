@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Bootstrap 2 - grid</title>
+<link rel="stylesheet" href="bootstrap.css">
+<style>
+/* visualize grid cells */
+.row .demo { background-color: #ddddff; border: 1px solid #9999cc; text-align: center; }
+</style>
+</head>
+<body>
+<div class="container">
+  <h2>Fixed grid</h2>
+  <div class="row">
+    <div class="span12"><div class="demo">span12</div></div>
+  </div>
+  <div class="row">
+    <div class="span6"><div class="demo">span6</div></div>
+    <div class="span6"><div class="demo">span6</div></div>
+  </div>
+  <div class="row">
+    <div class="span4"><div class="demo">span4</div></div>
+    <div class="span4"><div class="demo">span4</div></div>
+    <div class="span4"><div class="demo">span4</div></div>
+  </div>
+  <div class="row">
+    <div class="span3"><div class="demo">span3</div></div>
+    <div class="span3 offset3"><div class="demo">span3 offset3</div></div>
+    <div class="span3"><div class="demo">span3</div></div>
+  </div>
+  <div class="row">
+    <div class="span1"><div class="demo">1</div></div>
+    <div class="span2"><div class="demo">2</div></div>
+    <div class="span9"><div class="demo">span9</div></div>
+  </div>
+
+  <h2>Nested</h2>
+  <div class="row">
+    <div class="span9">
+      <div class="demo">Level 1: span9</div>
+      <div class="row">
+        <div class="span6"><div class="demo">Level 2: span6</div></div>
+        <div class="span3"><div class="demo">Level 2: span3</div></div>
+      </div>
+    </div>
+    <div class="span3"><div class="demo">span3</div></div>
+  </div>
+
+  <h2>Fluid</h2>
+  <div class="row-fluid">
+    <div class="span8"><div class="demo">fluid span8</div></div>
+    <div class="span4"><div class="demo">fluid span4</div></div>
+  </div>
+</div>
+</body>
+</html>

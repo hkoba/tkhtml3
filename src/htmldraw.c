@@ -3312,12 +3312,16 @@ getPixmap(pTree, xcanvas, ycanvas, w, h, getwin)
  *
  * HtmlLayoutImage --
  *
- *     <widget> image
- * 
+ *     <widget> image ?-full?
+ *
  *     Render the document to a Tk image and return the name of the image
  *     as the Tcl result. The calling script is responsible for deleting
  *     the image. The image has blank space where controls would be mapped
  *     in a live display.
+ *
+ *     By default the visible viewport is rendered. With -full, the entire
+ *     document canvas is rendered instead, regardless of the window size
+ *     and current scroll position.
  *
  * Results:
  *     Standard Tcl return code.
@@ -3340,21 +3344,38 @@ int HtmlLayoutImage(clientData, interp, objc, objv)
     int y = 0;
     int w;
     int h;
+    int isFull = 0;
+    int iScrollX;
+    int iScrollY;
+
+    if (objc == 3 && 0 == strcmp(Tcl_GetString(objv[2]), "-full")) {
+        isFull = 1;
+    } else if (objc != 2) {
+        Tcl_WrongNumArgs(interp, 2, objv, "?-full?");
+        return TCL_ERROR;
+    }
 
     /* Force any pending style and/or layout operations to run. */
     HtmlCallbackForce(pTree);
 
-    w = pTree->canvas.right;
-    h = pTree->canvas.bottom;
     Tk_MakeWindowExist(pTree->tkwin);
-    w = Tk_Width(pTree->tkwin);
-    h = Tk_Height(pTree->tkwin);
+    if (isFull) {
+        w = pTree->canvas.right;
+        h = pTree->canvas.bottom;
+        iScrollX = 0;
+        iScrollY = 0;
+    } else {
+        w = Tk_Width(pTree->tkwin);
+        h = Tk_Height(pTree->tkwin);
+        iScrollX = pTree->iScrollX;
+        iScrollY = pTree->iScrollY;
+    }
     assert(w >= 0 && h >= 0);
     if (w>0 && h>0) {
         Pixmap pixmap;
         Tcl_Obj *pImage;
         XImage *pXImage;
-        pixmap = getPixmap(pTree, pTree->iScrollX, pTree->iScrollY, w, h, 0);
+        pixmap = getPixmap(pTree, iScrollX, iScrollY, w, h, 0);
         pXImage = XGetImage(pDisplay, pixmap, x, y, w, h, AllPlanes, ZPixmap);
         pImage = HtmlXImageToImage(pTree, pXImage, w, h);
         XDestroyImage(pXImage);
