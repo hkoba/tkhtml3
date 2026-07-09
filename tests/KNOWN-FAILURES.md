@@ -1,61 +1,51 @@
-# Known test failures (baseline as of 2026-07-09, HEAD=1881046 + snapshot harness)
+# Test status
 
-Recorded by running `make test` (wired files: tree, style, dynamic, options)
-plus the unwired files individually. This documents the "some test failures"
-mentioned in commit 59367d3 so that later fixes can be tracked against it.
+## Current state (2026-07-09, after commits 498322a / 8605827)
 
-## make test (tests/all.tcl) — 14 unique failures
-
-### dynamic-2.2, dynamic-3.2, dynamic-3.3, dynamic-3.4, dynamic-4.0
-Dynamic selector tracking is broken: `$node dynamic conditions` returns
-empty (expected e.g. `:link {body a:hover}`), and colors driven by
-`dynamic set` do not apply. Affects `:hover`/`:link`/`:visited` styling.
-Visible symptom: acid2 "Hello World!" renders blue (erroneous :link
-handling); bootstrap `:hover` rules will not respond.
-
-### style-8.2 (Acid2-derived), also syntax-1.2 / syntax-1.3 (unwired file)
-`.h search {#1}` fails with `Bad css selector: "#1"` — selector parsing
-of ID selectors starting with a digit regressed (works as a document
-selector in older tkhtml).
-
-### tree-1.2, tree-1.4, tree-1.6
-Whitespace tokenization changed: tree dump now contains an extra
-`{newline 1}` token before `{space 4}` where the expectation has only
-`{space 4}`.
-
-### style-2.3
-`background:` shorthand: `no-repeat` inside the shorthand is lost,
-computed background-repeat is `repeat` (expected `no-repeat`).
-
-### style-4.3.3, style-4.3.5, style-4.3.10
-Duplicate-declaration handling in `_styleconfig` dump: `{p {color:red;
-color:green}}` is reported instead of the deduplicated `{p color:green}`.
-
-### style-11.1
-`$node property background` (shorthand readback) returns empty, expected
-`none repeat scroll 0% 0%`. (Historically this crashed with an assertion,
-see comments in style.test; now it returns empty.)
-
-## Unwired test files (run individually)
-
-- syntax.test: syntax-1.2, syntax-1.3 FAIL (same `#1` selector bug as
-  style-8.2); the rest pass.
-- reset.test: all pass.
-- tkt_gh3.test: all pass.
+- tests/all.tcl: **91/91 pass** (tree, style, dynamic, options).
+- syntax.test, reset.test, tkt_gh3.test: pass (run individually).
 - tkt_gh2.test: requires tklib widget::scrolledwindow or BWidget.
+- tests/acid2_check.tcl: **passes** — the static Acid2 face matches the
+  official reference rendering pixel-for-pixel (168x168 at viewport
+  (72,108) after scrolling to #top). The :hover parts of Acid2 (nose,
+  guillotine) are interactive and must be checked manually in a host
+  that forwards hover events (e.g. minhtmltk0).
 
-## Acid2 rendering state (tests/acid2/, via tests/snapshot.tcl)
+Run with a local build:
 
-    TCLLIBPATH=$builddir wish tests/snapshot.tcl -full 1 \
+    TCLLIBPATH=$PWD/bld wish tests/all.tcl
+    TCLLIBPATH=$PWD/bld wish tests/acid2_check.tcl
+    TCLLIBPATH=$PWD/bld wish tests/snapshot.tcl -anchor top \
         tests/acid2/acid2.html /tmp/acid2.png
 
-Baseline symptoms at HEAD:
-- Document height 4064px (should be ~350px); the face block sits at
-  y≈2640 instead of directly below "Hello World!".
-- `.picture` computes `width: auto` (its width declaration is lost) so
-  the forbidden red background spans the full page width.
-- The face itself renders (hair, forehead, nose, mouth) but several rows
-  are missing/misplaced.
-- Eyes show the "ERROR" object-fallback because the bare widget has no
-  <object> support (host responsibility; hv3 had it, minhtmltk0 will).
-- "Hello World!" renders blue instead of black (dynamic/:link bug above).
+## History: the 14 failures recorded at HEAD=1881046
+
+Commit 59367d3 mentioned "some test failures" without details. They
+broke down as follows (details in the git log of 8605827):
+
+**Real bugs, fixed:**
+- Universal background-color inheritance introduced by e3b47ba (2011)
+  corrupted rendering below any ancestor with a background, and leaked
+  color references (fixed in 498322a; this was also the cause of the
+  broken Acid2 face).
+- style-2.3: background shorthand discarded entirely when it contained
+  a unitless number in standards mode.
+- style-11.1: [$node property background] returned an empty string.
+
+**Stale tests (deliberate fossil-era behavior changes; tests updated):**
+- dynamic.test used the pre-CVS-851 one-argument script-handler
+  signature, so its stylesheets were never applied (dynamic-2.x/3.x);
+  :link/:visited are not tracked as dynamic conditions since CVS 774
+  (dynamic-4.0).
+- tree-1.2/1.4/1.6: newline tokens after opening tags (CVS 1068).
+- style-8.2, syntax-1.2/1.3: "#1" rejected as selector (CVS 1163);
+  use [id="1"].
+- style-4.3.3/5/10: duplicate declarations kept on purpose (CVS 1209).
+
+## Notes
+
+- htmldraw.c sorterCb still contains the defensive NULL check from
+  ae2e673 (canvas items whose node has no computed values are skipped
+  during paint). The suspected root cause — the color refcount
+  underflow in the e3b47ba hunk — is gone; the check is kept as a
+  crash guard.
