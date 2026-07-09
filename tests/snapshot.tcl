@@ -97,22 +97,36 @@ proc next_style_id {} {
     return author.[format %.4d [incr ::stylecount]]
 }
 
-proc apply_style {id css} {
-    .h style -id $id -importcmd [list import_style $id] -errorvar parseerrors $css
+# apply_style: feed a stylesheet to the widget. $basedir is the
+# directory the stylesheet was loaded from - url() values and @imports
+# inside it resolve relative to that directory (via -urlcmd, so image
+# URIs arrive at -imagecmd already resolved).
+proc apply_style {id css basedir} {
+    .h style -id $id -importcmd [list import_style $id $basedir] \
+        -urlcmd [list resolve_style_url $basedir] \
+        -errorvar parseerrors $css
     if {[info exists parseerrors] && [llength $parseerrors]} {
         puts stderr "css parse errors ($id): [llength $parseerrors] positions: $parseerrors"
     }
 }
 
-proc import_style {parentid uri} {
-    set path [resolve $uri]
-    if {$path ne "" && [file readable $path]} {
-        apply_style $parentid.[format %.4d [incr ::stylecount]] [read_file $path]
+proc resolve_style_url {basedir uri} {
+    if {[regexp {^[a-zA-Z][a-zA-Z0-9+.-]*:} $uri]} {
+        return $uri;   # data:, http:, ... pass through untouched
+    }
+    return [file join $basedir $uri]
+}
+
+proc import_style {parentid basedir uri} {
+    set path [resolve_style_url $basedir $uri]
+    if {![regexp {^[a-zA-Z][a-zA-Z0-9+.-]*:} $path] && [file readable $path]} {
+        apply_style $parentid.[format %.4d [incr ::stylecount]] \
+            [read_file $path] [file dirname $path]
     }
 }
 
 proc style_handler {attr content} {
-    apply_style [next_style_id] $content
+    apply_style [next_style_id] $content $::docdir
 }
 
 proc link_handler {node} {
@@ -127,12 +141,12 @@ proc link_handler {node} {
     set href [$node attribute -default "" href]
     if {[regexp {^data:text/css[;,]} $href]} {
         set css [url_decode [regsub {^data:text/css(;[^,]*)?,} $href {}]]
-        apply_style [next_style_id] $css
+        apply_style [next_style_id] $css $::docdir
         return
     }
     set path [resolve $href]
     if {$path ne "" && [file readable $path]} {
-        apply_style [next_style_id] [read_file $path]
+        apply_style [next_style_id] [read_file $path] [file dirname $path]
     }
 }
 

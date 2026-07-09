@@ -3065,10 +3065,27 @@ normalFlowLayoutInlineBlock(pLayout, pBox, pNode, pY, pContext, pNormal)
         iWidth = PIXELVAL_AUTO;
     } else {
         iWidth = PIXELVAL(pV, WIDTH, pBox->iContaining);
+        iWidth = boxSizingSubtract(pLayout, pNode, pBox->iContaining, iWidth,0);
     }
     iContaining = iWidth;
     if (iContaining == PIXELVAL_AUTO) {
-        blockMinMaxWidth(pLayout, pNode, &iContaining, 0);
+        /* Shrink-to-fit width (CSS 2.1 section 10.3.9):
+         * min(max(preferred minimum, available), preferred maximum).
+         * Formerly this used the preferred minimum width only, which
+         * caused e.g. bootstrap's inline-block buttons to wrap their
+         * label at every space.
+         */
+        int iMin;            /* Preferred minimum width */
+        int iMax;            /* Preferred maximum width */
+        int iAvailable;      /* Available width */
+        BoxProperties box;
+
+        nodeGetBoxProperties(pLayout, pNode, pBox->iContaining, &box);
+        iAvailable = pBox->iContaining;
+        iAvailable -= (margin.margin_left + margin.margin_right);
+        iAvailable -= (box.iLeft + box.iRight);
+        blockMinMaxWidth(pLayout, pNode, &iMin, &iMax);
+        iContaining = MIN(MAX(iMin, iAvailable), iMax);
     }
 
     sBox.iContaining = iContaining;
@@ -3076,6 +3093,13 @@ normalFlowLayoutInlineBlock(pLayout, pBox, pNode, pY, pContext, pNormal)
     if (iWidth != PIXELVAL_AUTO) {
         sBox.width = iWidth;
     }
+
+    /* Apply the 'height', 'min-height' and 'max-height' properties.
+     * (Formerly the specified height was ignored, collapsing empty
+     * inline-blocks - e.g. bootstrap's sprite icons - to zero height.)
+     */
+    sBox.height = getHeight(pNode, sBox.height, pBox->iContainingHeight);
+
     wrapContent(pLayout, &sBox2, &sBox, pNode);
 
     /* Include the vertical margins in the box. */
