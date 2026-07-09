@@ -3374,6 +3374,40 @@ HtmlNodeGetProperty(interp, pProp, pValues)
       return TCL_OK;
     }
 
+    /* Special case - the "background" shorthand is assembled from its
+    ** component properties in the order:
+    **
+    **     <image> <repeat> <attachment> <position-x> <position-y>
+    **
+    ** (background-color can be queried separately). Percentage positions
+    ** are formatted without a trailing ".0" (e.g. "0%", not "0.0%").
+    */
+    if (eProp == CSS_SHORTCUTPROPERTY_BACKGROUND) {
+        int ii;
+        char zBuf[64];
+        Tcl_Obj *pRet = getPropertyObj(pValues, CSS_PROPERTY_BACKGROUND_IMAGE);
+        Tcl_AppendToObj(pRet, " ", -1);
+        Tcl_AppendObjToObj(pRet,
+            getPropertyObj(pValues, CSS_PROPERTY_BACKGROUND_REPEAT));
+        Tcl_AppendToObj(pRet, " ", -1);
+        Tcl_AppendObjToObj(pRet,
+            getPropertyObj(pValues, CSS_PROPERTY_BACKGROUND_ATTACHMENT));
+        for (ii = 0; ii < 2; ii++) {
+            int iVal = ii ? pValues->iBackgroundPositionY
+                          : pValues->iBackgroundPositionX;
+            unsigned int mask = ii ? PROP_MASK_BACKGROUND_POSITION_Y
+                                   : PROP_MASK_BACKGROUND_POSITION_X;
+            if (pValues->mask & mask) {
+                snprintf(zBuf, sizeof(zBuf), " %.12g%%", ((double)iVal)/100.0);
+            } else {
+                snprintf(zBuf, sizeof(zBuf), " %dpx", iVal);
+            }
+            Tcl_AppendToObj(pRet, zBuf, -1);
+        }
+        Tcl_SetObjResult(interp, pRet);
+        return TCL_OK;
+    }
+
     assert(eProp <= CSS_PROPERTY_MAX_PROPERTY);
     if (eProp < 0) {
         Tcl_AppendResult(interp, "no such property: ", zProp, NULL);

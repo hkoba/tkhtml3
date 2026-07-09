@@ -1248,6 +1248,15 @@ shortcutBackground(pParse, p, v)
                 case CSS_CONST_LEFT:
                 case CSS_CONST_CENTER:
                 case CSS_TYPE_PERCENT:
+                /* A unitless non-zero number is not a valid length in
+                 * standards mode, but it still occupies a position slot
+                 * (and is rejected when the computed value is created,
+                 * leaving the default position). This keeps the valid
+                 * components of e.g. "background: black url(x) 50
+                 * no-repeat 100 fixed" alive instead of discarding the
+                 * whole shorthand.
+                 */
+                case CSS_TYPE_FLOAT:
                     if (!pPositionX) pPositionX = pProp;
                     else if(!pPositionY) pPositionY = pProp;
                     else goto error_out;

@@ -60,7 +60,9 @@ syntaxtest syntax-1.2 -style {
     <div class="first one">
       <div id="1" class="second two">
 } -body {
-  set node [lindex [.h search {#1}] 0]
+  # Since CVS 1163, "#1" is (correctly) rejected as a CSS selector because
+  # identifiers may not start with a digit; query via [id="1"] instead.
+  set node [lindex [.h search {[id="1"]}] 0]
   $node property color
 } -result red
 

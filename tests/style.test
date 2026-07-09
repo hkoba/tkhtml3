@@ -196,22 +196,48 @@ tcltest::test style-4.2.2 {} -body {
 # Test 4.3 tests for parsing errors using the examples given in the CSS 2.1
 # specification, section 4.2. All of the following declarations should
 # be equivalent to "p {color:green}".
+#
+# Note: since CVS 1209, duplicate declarations of the same property are
+# deliberately kept in the parsed property set (the later one wins at
+# computed-value time unless its value is illegal, in which case the
+# earlier one serves as the fallback). So stylesheets containing both a
+# valid "color:red" and a valid "color:green" dump both declarations;
+# the computed value is still green (verified by style-4.4.* below).
 set tn 1
-foreach ss [list \
-  {p { color:green }}                                    \
-  {p { color:green; color }}                             \
-  {p { color:red;   color; color:green }}                \
-  {p { color:green; color: }}                            \
-  {p { color:red;   color:; color:green }}               \
-  {p { color:green; {some more garbage}}}                \
-  {p { some more garbage; color: green}}                 \
-  {p { {some more garbage}; color: green}}               \
-  {p { color:green; color{;color:maroon} }}              \
-  {p { color:red;   color{;color:maroon}; color:green }}  
+foreach {ss expected} [list \
+  {p { color:green }}                                    {{p color:green}} \
+  {p { color:green; color }}                             {{p color:green}} \
+  {p { color:red;   color; color:green }}                {{p {color:red; color:green}}} \
+  {p { color:green; color: }}                            {{p color:green}} \
+  {p { color:red;   color:; color:green }}               {{p {color:red; color:green}}} \
+  {p { color:green; {some more garbage}}}                {{p color:green}} \
+  {p { some more garbage; color: green}}                 {{p color:green}} \
+  {p { {some more garbage}; color: green}}               {{p color:green}} \
+  {p { color:green; color{;color:maroon} }}              {{p color:green}} \
+  {p { color:red;   color{;color:maroon}; color:green }} {{p {color:red; color:green}}} \
 ] {
   tcltest::test style-4.3.$tn {} -body {
     parse_stylesheet $ss
-  } -result {{p color:green}}
+  } -result $expected
+  incr tn
+}
+
+# Behavioral check for the duplicate-keeping cases above: the computed
+# color must be green regardless of how the declarations are dumped.
+set tn 1
+foreach ss [list \
+  {p { color:red;   color; color:green }}                \
+  {p { color:red;   color:; color:green }}               \
+  {p { color:red;   color{;color:maroon}; color:green }}
+] {
+  tcltest::test style-4.4.$tn {} -body {
+    .h reset
+    .h configure -defaultstyle ""
+    .h style $ss
+    .h parse -final {<html><body><p>x</p></body></html>}
+    set n [lindex [.h search p] 0]
+    property $n color
+  } -result green
   incr tn
 }
 
@@ -356,7 +382,9 @@ tcltest::test style-8.2 {} -body {
     <div class="first one">
       <div id="1" class="second two">
   }
-  set node [lindex [.h search {#1}] 0]
+  # Since CVS 1163, "#1" is (correctly) rejected as a CSS selector because
+  # identifiers may not start with a digit; query via [id="1"] instead.
+  set node [lindex [.h search {[id="1"]}] 0]
   property $node color
 } -result red
 

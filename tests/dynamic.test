@@ -8,7 +8,7 @@ sourcefile common.tcl
 
 html .h
 .h handler script style styleHandler 
-proc styleHandler {data} {
+proc styleHandler {attr data} {
   .h style $data
 }
 
@@ -126,7 +126,10 @@ tcltest::test dynamic-4.0 {} -body {
   }
   set ::node [lindex [.h search a] 0]
   $::node dynamic conditions
-} -result {:link {body a:hover}}
+  # Since CVS 774, :link/:visited are deliberately not tracked as dynamic
+  # conditions (see the #if 0 block in HtmlCssSelector); the host is
+  # expected to set the link/visited flags before styling.
+} -result {{body a:hover}}
 
 finish_test
 

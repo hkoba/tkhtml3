@@ -15,6 +15,9 @@
 #                        (uses [pathName image -full]).
 #     -info   SELECTOR   After rendering, print "SELECTOR bbox COMPUTED..."
 #                        lines for each node matching SELECTOR (repeatable).
+#     -anchor ID         Scroll so the element with this id is at the top
+#                        of the viewport before the snapshot (emulates
+#                        following a #fragment link, e.g. acid2.html#top).
 #
 # The harness resolves <style>, <link rel=stylesheet href=...>, @import
 # and images (file paths relative to INPUT, plus data: URIs) so that
@@ -33,12 +36,13 @@ set ::opts(width) 800
 set ::opts(height) 600
 set ::opts(yview) 0.0
 set ::opts(full) 0
+set ::opts(anchor) ""
 set ::opts(info) {}
 set argv2 {}
 for {set i 0} {$i < [llength $argv]} {incr i} {
     set a [lindex $argv $i]
     switch -glob -- $a {
-        -width - -height - -yview - -full {
+        -width - -height - -yview - -full - -anchor {
             set ::opts([string range $a 1 end]) [lindex $argv [incr i]]
         }
         -info { lappend ::opts(info) [lindex $argv [incr i]] }
@@ -112,12 +116,36 @@ proc style_handler {attr content} {
 }
 
 proc link_handler {node} {
-    if {[string tolower [$node attribute -default "" rel]] eq "stylesheet"} {
-        set href [$node attribute -default "" href]
-        set path [resolve $href]
-        if {$path ne "" && [file readable $path]} {
-            apply_style [next_style_id] [read_file $path]
-        }
+    # rel is a space-separated word list ("stylesheet",
+    # "appendix stylesheet", "alternate stylesheet", ...).  Alternate
+    # stylesheets (rel contains "alternate" and a title is given) are
+    # not applied by default; everything else containing "stylesheet" is.
+    set rel [string tolower [$node attribute -default "" rel]]
+    if {[lsearch $rel stylesheet] < 0} return
+    if {[lsearch $rel alternate] >= 0
+            && [$node attribute -default "" title] ne ""} return
+    set href [$node attribute -default "" href]
+    if {[regexp {^data:text/css[;,]} $href]} {
+        set css [url_decode [regsub {^data:text/css(;[^,]*)?,} $href {}]]
+        apply_style [next_style_id] $css
+        return
+    }
+    set path [resolve $href]
+    if {$path ne "" && [file readable $path]} {
+        apply_style [next_style_id] [read_file $path]
+    }
+}
+
+# Minimal <object> support, mirroring what a browser host does: if the
+# data attribute is a loadable image, render it as a replaced element;
+# otherwise leave the fallback content (possibly a nested <object>).
+proc object_handler {node} {
+    set data [$node attribute -default "" data]
+    if {$data eq ""} return
+    set img [imgcmd $data]
+    if {$img ne ""} {
+        image delete $img
+        $node override [list -tkhtml-replacement-image "url($data)"]
     }
 }
 
@@ -125,13 +153,26 @@ html .h -width $::opts(width) -height $::opts(height) -imagecmd imgcmd
 pack .h -fill both -expand 1
 .h handler script style style_handler
 .h handler node link link_handler
+.h handler node object object_handler
 
 proc bgerror {msg} { puts stderr "bgerror: $msg" }
 
 .h parse -final [read_file $::infile]
 update
 
-if {$::opts(yview) != 0.0} {
+if {$::opts(anchor) ne ""} {
+    set n [lindex [.h search "\[id=\"$::opts(anchor)\"\]"] 0]
+    if {$n eq ""} {
+        puts stderr "anchor id \"$::opts(anchor)\" not found"
+    } else {
+        lassign [.h bbox $n] x1 y1 x2 y2
+        lassign [.h bbox] dx1 dy1 dx2 dy2
+        if {$dy2 > 0} {
+            .h yview moveto [expr {double($y1) / $dy2}]
+            update
+        }
+    }
+} elseif {$::opts(yview) != 0.0} {
     .h yview moveto $::opts(yview)
     update
 }

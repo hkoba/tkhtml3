@@ -64,13 +64,16 @@ tcltest::test tree-1.1 {} -body {
 } -result 1
 
 tcltest::test tree-1.2 {} -body {
+  # Note: since CVS 1068 (ticket #198), newlines immediately after an
+  # opening tag are only ignored for <pre>; they produce {newline N}
+  # tokens elsewhere. Expectations updated accordingly.
   string trim [get_tree]
 } -result [string trim {
 <html>
   <head>
   </head>
   <body>
-    {space 4}
+    {newline 1} {space 4}
     <p>
       {text Hello} {space 1} {text World} {newline 1} {space 4}
       {newline 1} {space 4}
@@ -105,14 +108,17 @@ tcltest::test tree-1.3 {} -body {
 } -result 2
 
 tcltest::test tree-1.4 {} -body {
+  # Note: since CVS 1068 (ticket #198), newlines immediately after an
+  # opening tag are only ignored for <pre>; they produce {newline N}
+  # tokens elsewhere. Expectations updated accordingly.
   string trim [get_tree]
 } -result [string trim {
 <html>
   <head>
   </head>
   <body>
-    {space 4}
-    {space 4}
+    {newline 1} {space 4}
+    {newline 1} {space 4}
     <p>
       {text Hello} {space 1} {text World} {newline 1} {space 4}
       {newline 1} {space 4}
@@ -145,13 +151,16 @@ tcltest::test tree-1.5 {} -body {
 } -result 3
 
 tcltest::test tree-1.6 {} -body {
+  # Note: since CVS 1068 (ticket #198), newlines immediately after an
+  # opening tag are only ignored for <pre>; they produce {newline N}
+  # tokens elsewhere. Expectations updated accordingly.
   string trim [get_tree]
 } -result [string trim {
 <html>
   <head>
   </head>
   <body>
-    {space 4}
+    {newline 1} {space 4}
     {newline 1} {space 4}
     <p>
       {text Paragraph} {space 1} {text one}
@@ -177,6 +186,9 @@ tcltest::test tree-1.7 {} -body {
 tcltest::test tree-2.1 {} -body {
   .h reset
   .h parse -final {<html><body>Hello World}
+  # Note: since CVS 1068 (ticket #198), newlines immediately after an
+  # opening tag are only ignored for <pre>; they produce {newline N}
+  # tokens elsewhere. Expectations updated accordingly.
   string trim [get_tree]
 } -result [string trim {
 <html>
@@ -236,6 +248,9 @@ tcltest::test tree-3.2.5 {} -body {
 tcltest::test tree-3.3.1 {} -body {
   .h parse -final "<div>"
   set ::nodelist [.h fragment "<span>some text</span><img src=src.gif>"]
+  # Note: since CVS 1068 (ticket #198), newlines immediately after an
+  # opening tag are only ignored for <pre>; they produce {newline N}
+  # tokens elsewhere. Expectations updated accordingly.
   string trim [get_tree]
 } -result [string trim {
 <html>
@@ -250,6 +265,9 @@ tcltest::test tree-3.3.1 {} -body {
 tcltest::test tree-3.3.2 {} -body {
   set div [.h search div]
   $div insert [lindex $::nodelist 1]
+  # Note: since CVS 1068 (ticket #198), newlines immediately after an
+  # opening tag are only ignored for <pre>; they produce {newline N}
+  # tokens elsewhere. Expectations updated accordingly.
   string trim [get_tree]
 } -result [string trim {
 <html>
@@ -266,6 +284,9 @@ tcltest::test tree-3.3.2 {} -body {
 tcltest::test tree-3.3.3 {} -body {
   set div [.h search div]
   $div insert -before [lindex [$div children] 0] [lindex $::nodelist 0]
+  # Note: since CVS 1068 (ticket #198), newlines immediately after an
+  # opening tag are only ignored for <pre>; they produce {newline N}
+  # tokens elsewhere. Expectations updated accordingly.
   string trim [get_tree]
 } -result [string trim {
 <html>
@@ -285,6 +306,9 @@ tcltest::test tree-3.3.3 {} -body {
 tcltest::test tree-3.3.4 {} -body {
   set div [.h search div]
   $div insert [lindex $::nodelist 0]
+  # Note: since CVS 1068 (ticket #198), newlines immediately after an
+  # opening tag are only ignored for <pre>; they produce {newline N}
+  # tokens elsewhere. Expectations updated accordingly.
   string trim [get_tree]
 } -result [string trim {
 <html>
@@ -304,6 +328,9 @@ tcltest::test tree-3.3.4 {} -body {
 tcltest::test tree-3.3.5 {} -body {
   set div [.h search div]
   $div remove [lindex $::nodelist 0]
+  # Note: since CVS 1068 (ticket #198), newlines immediately after an
+  # opening tag are only ignored for <pre>; they produce {newline N}
+  # tokens elsewhere. Expectations updated accordingly.
   string trim [get_tree]
 } -result [string trim {
 <html>
