@@ -4,9 +4,11 @@ on:
   push:
   pull_request:
 
-env:
-  # 24-bit depth matters: the acid2 checks compare exact pixel colors.
-  XVFB: xvfb-run -a -s "-screen 0 1280x1024x24"
+# Note: all rendering steps run under xvfb-run with an explicit
+# 24-bit screen (the acid2 checks compare exact pixel colors), spelled
+# out in full in each step. Do not factor the command into an env
+# variable: quotes inside a variable are not re-parsed by the shell,
+# which breaks xvfb-run's -s argument.
 
 jobs:
   test-tcl86:
@@ -30,25 +32,25 @@ jobs:
       - name: Run the test suite
         env:
           TCLLIBPATH: ${{ github.workspace }}/bld
-        run: $XVFB wish tests/all.tcl
+        run: xvfb-run -a -s "-screen 0 1280x1024x24" wish tests/all.tcl
 
       - name: Run standalone test files
         env:
           TCLLIBPATH: ${{ github.workspace }}/bld
         run: |
-          $XVFB wish tests/syntax.test
-          $XVFB wish tests/reset.test
-          $XVFB wish tests/tkt_gh3.test
+          xvfb-run -a -s "-screen 0 1280x1024x24" wish tests/syntax.test
+          xvfb-run -a -s "-screen 0 1280x1024x24" wish tests/reset.test
+          xvfb-run -a -s "-screen 0 1280x1024x24" wish tests/tkt_gh3.test
 
       - name: Acid2 pixel comparison
         env:
           TCLLIBPATH: ${{ github.workspace }}/bld
-        run: $XVFB wish tests/acid2_check.tcl
+        run: xvfb-run -a -s "-screen 0 1280x1024x24" wish tests/acid2_check.tcl
 
       - name: Acid2 viewer app self-check
         env:
           TCLLIBPATH: ${{ github.workspace }}/bld
-        run: $XVFB wish tools/acid2.tcl -check
+        run: xvfb-run -a -s "-screen 0 1280x1024x24" wish tools/acid2.tcl -check
 
       - name: Render bootstrap 2 snapshot pages
         env:
@@ -56,7 +58,7 @@ jobs:
         run: |
           mkdir -p snapshots
           for page in buttons grid tables forms components typography navbar; do
-            $XVFB wish tests/snapshot.tcl -width 1000 -full 1 \
+            xvfb-run -a -s "-screen 0 1280x1024x24" wish tests/snapshot.tcl -width 1000 -full 1 \
                 tests/bootstrap/$page.html snapshots/$page.png
           done
 
@@ -121,25 +123,25 @@ jobs:
       - name: Run the test suite
         env:
           TCLLIBPATH: ${{ github.workspace }}/bld
-        run: $XVFB $TCLTK_PREFIX/bin/wish9.0 tests/all.tcl
+        run: xvfb-run -a -s "-screen 0 1280x1024x24" $TCLTK_PREFIX/bin/wish9.0 tests/all.tcl
 
       - name: Run standalone test files
         env:
           TCLLIBPATH: ${{ github.workspace }}/bld
         run: |
-          $XVFB $TCLTK_PREFIX/bin/wish9.0 tests/syntax.test
-          $XVFB $TCLTK_PREFIX/bin/wish9.0 tests/reset.test
-          $XVFB $TCLTK_PREFIX/bin/wish9.0 tests/tkt_gh3.test
+          xvfb-run -a -s "-screen 0 1280x1024x24" $TCLTK_PREFIX/bin/wish9.0 tests/syntax.test
+          xvfb-run -a -s "-screen 0 1280x1024x24" $TCLTK_PREFIX/bin/wish9.0 tests/reset.test
+          xvfb-run -a -s "-screen 0 1280x1024x24" $TCLTK_PREFIX/bin/wish9.0 tests/tkt_gh3.test
 
       - name: Acid2 pixel comparison
         env:
           TCLLIBPATH: ${{ github.workspace }}/bld
-        run: $XVFB $TCLTK_PREFIX/bin/wish9.0 tests/acid2_check.tcl
+        run: xvfb-run -a -s "-screen 0 1280x1024x24" $TCLTK_PREFIX/bin/wish9.0 tests/acid2_check.tcl
 
       - name: Acid2 viewer app self-check
         env:
           TCLLIBPATH: ${{ github.workspace }}/bld
-        run: $XVFB $TCLTK_PREFIX/bin/wish9.0 tools/acid2.tcl -check
+        run: xvfb-run -a -s "-screen 0 1280x1024x24" $TCLTK_PREFIX/bin/wish9.0 tools/acid2.tcl -check
 
       - name: Upload acid2 failure image
         if: failure()
@@ -183,4 +185,4 @@ jobs:
           TCLLIBPATH: ${{ github.workspace }}/bld
         run: |
           cd minhtmltk0
-          $XVFB tests/all.tcl
+          xvfb-run -a -s "-screen 0 1280x1024x24" tests/all.tcl
