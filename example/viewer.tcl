@@ -119,10 +119,34 @@ bind all <KeyPress-Up>    {.h yview scroll -1 units}
 bind all <KeyPress-Down>  {.h yview scroll  1 units}
 bind all <KeyPress-Prior> {.h yview scroll -1 pages}
 bind all <KeyPress-Next>  {.h yview scroll  1 pages}
+bind all <KeyPress-Home>  {.h yview moveto 0}
+bind all <KeyPress-End>   {.h yview moveto 1}
 bind all <KeyPress-q>     {destroy .}
-catch {bind .h <MouseWheel> {.h yview scroll [expr {-%D/40}] units}}
-catch {bind .h <Button-4>   {.h yview scroll -3 units}}
-catch {bind .h <Button-5>   {.h yview scroll  3 units}}
+
+# Mouse wheel. Two event models exist:
+#  - Tk 8.7+/9 (TIP 474): all platforms deliver <MouseWheel> to the
+#    window under the pointer, one notch = +/-120 in %D (touchpads may
+#    send smaller deltas - never let them round to zero).
+#  - Tk 8.6 on X11: wheel notches arrive as <Button-4>/<Button-5>
+#    instead, and <MouseWheel> never fires.
+# Binding both on "all" covers either Tk and makes the wheel work
+# wherever the pointer is. Scrollbars already scroll their associated
+# widget through their class bindings, so they are skipped here to
+# avoid scrolling twice per notch.
+proc wheel_scroll {w view delta} {
+    if {[winfo class $w] eq "Scrollbar"} return
+    set units [expr {-$delta / 40}]
+    if {$units == 0 && $delta != 0} {
+        set units [expr {$delta < 0 ? 1 : -1}]
+    }
+    .h $view scroll $units units
+}
+bind all <MouseWheel>       {wheel_scroll %W yview %D}
+bind all <Shift-MouseWheel> {wheel_scroll %W xview %D}
+bind all <Button-4>         {wheel_scroll %W yview  120}
+bind all <Button-5>         {wheel_scroll %W yview -120}
+bind all <Shift-Button-4>   {wheel_scroll %W xview  120}
+bind all <Shift-Button-5>   {wheel_scroll %W xview -120}
 
 # --- Load ------------------------------------------------------------
 .h parse -final [read_file $file]
