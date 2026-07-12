@@ -86,6 +86,29 @@ Note: the pixel comparison covers the static rendering. The `:hover`
 nose is inherently interactive — check it by hand, it takes two
 seconds and is the fun part anyway.
 
+## Examples
+
+`example/viewer.tcl` is a minimal file viewer (scrolling, `<style>`
+and local `<link rel=stylesheet>` support, local images, host-driven
+`:hover`). With no argument it shows `example/modern-baseline.html`, a
+self-describing visual demo of the modern-CSS baseline features: HTML5
+elements (header/nav/section/mark/template/[hidden]/dialog...), the
+CSS3 selectors (`:not()`, `:nth-last-child()`, `*-of-type`, `:empty`,
+`:only-child`, `:root`), the `rem` unit, `currentColor`,
+`white-space: pre-wrap / pre-line` and `word-spacing` — each block
+states what you should see.
+
+```sh
+TCLLIBPATH=$PWD/bld wish example/viewer.tcl
+
+# it can display other local pages too, e.g. the Bootstrap samples:
+TCLLIBPATH=$PWD/bld wish example/viewer.tcl tests/bootstrap/components.html
+```
+
+The same features are covered as assertions in `tests/modern.test`;
+the viewer also doubles as the smallest useful host application (see
+`agent_docs/host-application-contract.md`).
+
 ## Tests
 
 ```sh

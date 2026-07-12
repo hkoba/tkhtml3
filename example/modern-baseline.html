@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>tkhtml3 modern baseline demo</title>
+<style>
+  /* :root and rem (1rem = 16px on this page) */
+  :root { font-size: 16px }
+  body {
+    margin: 0; padding: 0;
+    font-family: helvetica;
+    color: #222222;
+    background-color: #f4f4f0;
+  }
+
+  /* The page skeleton is built from HTML5 structural elements styled
+   * purely by tag name - before the Tier 1 work these tags were
+   * silently dropped by the parser. */
+  header  { background-color: #204060; color: white; padding: 1rem 1.2rem }
+  header h1 { margin: 0; font-size: 1.4rem }
+  header p  { margin: 0.3rem 0 0 0; color: #b8c8d8; font-size: 0.85rem }
+  nav     { background-color: #dde4ea; padding: 0.6rem 1.2rem;
+            border-bottom: 3px solid #204060 }
+  nav a   { margin-right: 1.2rem; color: #204060; padding: 2px 6px }
+  nav a:hover { background-color: #ffd700; color: black }
+  main    { padding: 1rem 1.2rem }
+  footer  { background-color: #dde4ea; color: #204060;
+            padding: 0.8rem 1.2rem; margin-top: 1rem;
+            border-top: 3px solid #204060; font-size: 0.85rem }
+
+  section { background-color: white; border: 1px solid #c8c8c0;
+            border-radius: 6px; margin-bottom: 1.2rem;
+            padding: 0 1rem 1rem 1rem }
+  section h2 { font-size: 1.05rem; color: #204060;
+               border-bottom: 2px solid #204060; padding-bottom: 4px }
+  .note   { color: #777777; font-size: 0.8rem }
+  .bad    { background-color: #cc2222; color: white; font-weight: bold;
+            padding: 4px }
+
+  /* --- selectors ---------------------------------------------- */
+  #zebra { list-style-type: none; padding-left: 0; width: 20rem }
+  #zebra li { padding: 3px 8px }
+  #zebra li:nth-child(odd)    { background-color: #e8eef8 }
+  #zebra li:first-child       { font-weight: bold }
+  #zebra li:last-child        { font-style: italic }
+  #zebra li:nth-last-child(2) { color: #b03030 }
+
+  #notdemo { list-style-type: none; padding-left: 0; width: 20rem }
+  #notdemo li { padding: 3px 8px }
+  #notdemo li:not(.special)   { color: #999999 }
+  #notdemo li.special         { background-color: #ffd700; color: black }
+
+  .slot { display: inline-block; width: 8rem; height: 2rem;
+          border: 1px solid #999999; margin-right: 0.8rem;
+          vertical-align: top; font-size: 0.8rem; padding: 2px 4px }
+  .slot:empty { background-color: #cdeacd; border: 2px solid #2a7a2a }
+
+  #oftype p { margin: 4px 0; padding-left: 8px }
+  #oftype p:first-of-type { border-left: 5px solid #4a90d9 }
+  #oftype p:last-of-type  { border-left: 5px solid #b03030 }
+
+  .oc span { padding: 1px 6px }
+  .oc span:only-child { background-color: #cdeacd }
+
+  /* --- rem vs em ------------------------------------------------ */
+  /* The bars inherit font-size 24px from .embox, so em doubles up
+   * while rem keeps tracking the 16px root font. */
+  .embox  { font-size: 24px }
+  .bar    { background-color: #4a90d9; color: white;
+            padding: 2px 6px; margin-bottom: 4px }
+  .w10em  { width: 10em }       /* 10 x 24px = 240px  */
+  .w10rem { width: 10rem }      /* 10 x 16px = 160px  */
+
+  /* --- currentColor ---------------------------------------------- */
+  .badge { display: inline-block; border: 2px solid currentColor;
+           border-radius: 4px; padding: 3px 10px; margin-right: 0.6rem;
+           background-color: white }
+  .ok    { color: #2a7a2a }
+  .warn  { color: #b8860b }
+  .err   { color: #b03030 }
+
+  /* --- white-space ------------------------------------------------ */
+  .ws { display: inline-block; vertical-align: top;
+        width: 15rem; margin-right: 0.6rem;
+        border: 1px solid #999999; background-color: #f8f8f4;
+        font-size: 0.8rem; overflow: hidden }
+  .ws h3 { font-size: 0.8rem; margin: 0; padding: 2px 6px;
+           background-color: #204060; color: white; font-weight: normal }
+  .ws div { padding: 4px 6px; overflow: hidden }
+  #ws-pre      div { white-space: pre }
+  #ws-pre-wrap div { white-space: pre-wrap }
+  #ws-pre-line div { white-space: pre-line }
+
+  /* --- word-spacing ----------------------------------------------- */
+  .wsp { word-spacing: 10px }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>tkhtml3 &mdash; modern baseline demo</h1>
+  <p>This page header, the nav bar, every section box and the footer
+     are HTML5 elements (header/nav/main/section/footer) styled by tag
+     name. Each section says what you should see.</p>
+</header>
+
+<nav>
+  <a href="#">Home</a><a href="#">Docs</a><a href="#">About</a>
+  <span class="note">&larr; hovering a link turns it gold
+  (host-driven :hover, see viewer.tcl)</span>
+</nav>
+
+<main>
+
+<section>
+  <h2>1. HTML5 phrasing elements &amp; hidden things</h2>
+  <p>Highlighted: <mark>&lt;mark&gt; has a yellow background</mark>.
+     Edits: <del>deleted text is struck</del> and
+     <ins>inserted text is underlined</ins>.
+     An <abbr>ABBR</abbr> renders in small-caps.
+     A quote element: <q>quoted with typographic quotes</q>.
+     Published <time>2026-07-12</time>.</p>
+  <template><p class="bad">FAIL: &lt;template&gt; content must not render.</p></template>
+  <p hidden class="bad">FAIL: [hidden] content must not render.</p>
+  <dialog><span class="bad">FAIL: a closed &lt;dialog&gt; must not render.</span></dialog>
+  <dialog open>An <b>open</b> &lt;dialog&gt; renders as a bordered, padded block.</dialog>
+  <p class="note">If you can read a red FAIL bar above, something is broken.</p>
+</section>
+
+<section>
+  <h2>2. CSS3 selectors</h2>
+
+  <p><b>:nth-child(odd)</b> stripes, <b>:first-child</b> bold,
+     <b>:last-child</b> italic, <b>:nth-last-child(2)</b> red:</p>
+  <ul id="zebra">
+    <li>first row &mdash; bold, striped</li>
+    <li>second row</li>
+    <li>third row &mdash; striped</li>
+    <li>fourth row &mdash; red (2nd from the end)</li>
+    <li>fifth row &mdash; italic, striped</li>
+  </ul>
+
+  <p><b>:not(.special)</b> greys everything that is not gold:</p>
+  <ul id="notdemo">
+    <li>not special &mdash; grey</li>
+    <li class="special">special &mdash; gold</li>
+    <li>not special &mdash; grey</li>
+  </ul>
+
+  <p><b>:empty</b> &mdash; the empty slot turns green:</p>
+  <div><span class="slot"></span><span class="slot">occupied slot</span></div>
+
+  <p><b>:first-of-type / :last-of-type</b> &mdash; blue bar on the first
+     &lt;p&gt;, red bar on the last, the &lt;div&gt; between them does
+     not count:</p>
+  <div id="oftype">
+    <p>first paragraph &mdash; blue left bar</p>
+    <div class="note">(a div between the paragraphs)</div>
+    <p>middle paragraph &mdash; no bar</p>
+    <p>last paragraph &mdash; red left bar</p>
+  </div>
+
+  <p><b>:only-child</b> &mdash; green only where the span is alone:</p>
+  <div class="oc"><span>an only child &mdash; green</span></div>
+  <div class="oc"><span>two children</span><span>&mdash; no green</span></div>
+</section>
+
+<section>
+  <h2>3. rem vs em</h2>
+  <p class="note">Both bars sit inside a container with font-size 24px.
+     The em bar scales with that container (10em = 240px); the rem bar
+     ignores it and tracks the root font (10rem = 160px).</p>
+  <div class="embox">
+    <div class="bar w10em">width: 10em</div>
+    <div class="bar w10rem">width: 10rem</div>
+  </div>
+</section>
+
+<section>
+  <h2>4. currentColor</h2>
+  <p>One .badge rule with <code>border: 2px solid currentColor</code>;
+     only the text color changes per badge, the border follows:</p>
+  <p>
+    <span class="badge ok">ok</span>
+    <span class="badge warn">warning</span>
+    <span class="badge err">error</span>
+  </p>
+</section>
+
+<section>
+  <h2>5. white-space: pre / pre-wrap / pre-line</h2>
+  <p class="note">Same source text in all three boxes: an indented
+     line, a blank line, and one long line. pre clips (no wrapping),
+     pre-wrap keeps the indent and wraps the long line, pre-line
+     collapses the indent but keeps the line breaks and wraps.</p>
+  <div class="ws" id="ws-pre"><h3>pre</h3><div>    indented line
+
+this long line does not wrap and is clipped at the box edge</div></div>
+  <div class="ws" id="ws-pre-wrap"><h3>pre-wrap</h3><div>    indented line
+
+this long line wraps but keeps every     space   run</div></div>
+  <div class="ws" id="ws-pre-line"><h3>pre-line</h3><div>    indented line
+
+this long line wraps and collapses     space   runs</div></div>
+</section>
+
+<section>
+  <h2>6. word-spacing</h2>
+  <p>normal: the quick brown fox jumps over the lazy dog</p>
+  <p class="wsp">10px extra: the quick brown fox jumps over the lazy dog</p>
+</section>
+
+</main>
+
+<footer>
+  Rendered by Tkhtml3. Run me with:
+  <code>wish example/viewer.tcl</code> &mdash; see tests/modern.test for
+  the same features as assertions.
+</footer>
+
+</body>
+</html>
