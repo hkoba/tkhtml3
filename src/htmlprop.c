@@ -404,6 +404,10 @@ HtmlPropertyToString(pProp, pzFree)
             switch (pProp->eType) {
                 case CSS_TYPE_EM:         zSym = "em"; break;
                 case CSS_TYPE_REM:        zSym = "rem"; break;
+                case CSS_TYPE_VW:         zSym = "vw"; break;
+                case CSS_TYPE_VH:         zSym = "vh"; break;
+                case CSS_TYPE_VMIN:       zSym = "vmin"; break;
+                case CSS_TYPE_VMAX:       zSym = "vmax"; break;
                 case CSS_TYPE_PX:         zSym = "px"; break;
                 case CSS_TYPE_PT:         zSym = "pt"; break;
                 case CSS_TYPE_PC:         zSym = "pc"; break;
@@ -1071,6 +1075,23 @@ propertyValuesSetFontSize(p, pProp)
             iPixels = INTEGER(pProp->v.rVal);
             break;
 
+        /* Font-size in viewport units ("fluid typography") */
+        case CSS_TYPE_VW:
+        case CSS_TYPE_VH:
+        case CSS_TYPE_VMIN:
+        case CSS_TYPE_VMAX: {
+            int vw, vh, ref;
+            HtmlViewportSize(p->pTree, &vw, &vh);
+            switch (pProp->eType) {
+                case CSS_TYPE_VW:   ref = vw; break;
+                case CSS_TYPE_VH:   ref = vh; break;
+                case CSS_TYPE_VMIN: ref = MIN(vw, vh); break;
+                default:            ref = MAX(vw, vh); break;
+            }
+            iPixels = INTEGER(pProp->v.rVal * (double)ref / 100.0);
+            break;
+        }
+
         /* Font-size is already in points or picas*/
         case CSS_TYPE_PC:
             iPoints = (int)(pProp->v.rVal * HTML_IFONTSIZE_SCALE / 12.0);
@@ -1518,6 +1539,27 @@ propertyValuesSetLength(p, pIVal, em_mask, pProp, allowNegative)
             if (em_mask == 0) return 1;
             iVal = (int)(pProp->v.rVal * 100.0);
             break;
+
+        /* Viewport units resolve against the window size right here
+         * (no font dependency). A window resize triggers a restyle
+         * whenever these units are in use - see isViewportUnitsSeen.
+         * Note: no zoom scaling; 100vw is the viewport width, period.
+         */
+        case CSS_TYPE_VW:
+        case CSS_TYPE_VH:
+        case CSS_TYPE_VMIN:
+        case CSS_TYPE_VMAX: {
+            int vw, vh, ref;
+            HtmlViewportSize(p->pTree, &vw, &vh);
+            switch (pProp->eType) {
+                case CSS_TYPE_VW:   ref = vw; break;
+                case CSS_TYPE_VH:   ref = vh; break;
+                case CSS_TYPE_VMIN: ref = MIN(vw, vh); break;
+                default:            ref = MAX(vw, vh); break;
+            }
+            iVal = INTEGER(pProp->v.rVal * (double)ref / 100.0);
+            break;
+        }
 
         case CSS_TYPE_PX:
             iVal = INTEGER(rZoomedVal);

@@ -385,6 +385,9 @@ struct HtmlElementNode {
 /* Alias for HtmlNodeXXX() methods */
 #define HtmlElemParent(p) ((HtmlElementNode *)HtmlNodeParent(&(p)->node))
 
+/* Current viewport size (htmltcl.c) */
+void HtmlViewportSize(HtmlTree *, int *, int *);
+
 /* Values for HtmlNode.flags. These may be set and cleared via the Tcl
  * interface on the node command: [$node dynamic set|clear ...]
  */
@@ -602,6 +605,12 @@ struct HtmlTree {
     HtmlFragmentContext *pFragment;
 
     int isFixed;                    /* True if any "fixed" graphics */
+
+    /* Set (sticky) as soon as any stylesheet or style attribute uses a
+     * viewport unit (vw/vh/vmin/vmax). A window resize then triggers a
+     * restyle, not just a relayout, so those values stay correct.
+     */
+    int isViewportUnitsSeen;
 
     /*
      * Handler callbacks configured by the [$widget handler] command.

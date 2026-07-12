@@ -28,6 +28,8 @@
 #     modern-8.*  Conditional @media queries (min/max-width/height),
 #                 including restyle-on-resize.
 #
+#     modern-9.*  Viewport units vw/vh/vmin/vmax.
+#
 # Note: when testing with properties, prefer 'color' - the initial value
 # of e.g. 'border-top-width' is "medium" (2px), which is easy to confuse
 # with a test value.
@@ -551,5 +553,40 @@ tcltest::test modern-8.2 {unconditional rules unaffected by resize} -body {
   update
   set r
 } -result {purple}
+
+#--------------------------------------------------------------------------
+# modern-9.*: viewport units.
+#
+tcltest::test modern-9.0 {vw/vh/vmin/vmax resolve against the viewport} -body {
+  wm geometry . 400x300
+  update
+  .h reset
+  .h style {
+    #a { width: 50vw; display: block }
+    #b { height: 10vh; display: block }
+    #c { width: 20vmin; display: block }
+    #d { width: 20vmax; display: block }
+    #e { font-size: 5vw }
+  }
+  .h parse -final {<html><body>
+    <div id="a">a</div><div id="b">b</div><div id="c">c</div>
+    <div id="d">d</div><div id="e">e</div>
+  </body></html>}
+  update
+  list [property [idnode a] width] [property [idnode b] height] \
+       [property [idnode c] width] [property [idnode d] width] \
+       [property [idnode e] font-size]
+} -result {200px 30px 60px 80px 20px}
+
+tcltest::test modern-9.1 {viewport units track resizes} -body {
+  wm geometry . 600x300
+  update
+  after 200 {set ::vw_done 1}; vwait ::vw_done
+  update
+  set r [list [property [idnode a] width] [property [idnode e] font-size]]
+  wm geometry . {}
+  update
+  set r
+} -result {300px 30px}
 
 finish_test

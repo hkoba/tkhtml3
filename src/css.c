@@ -697,6 +697,10 @@ tokenToProperty(pParse, pToken)
         {CSS_TYPE_EM,         2, "em"},
         {CSS_TYPE_EX,         2, "ex"},
         {CSS_TYPE_REM,        3, "rem"},
+        {CSS_TYPE_VW,         2, "vw"},
+        {CSS_TYPE_VH,         2, "vh"},
+        {CSS_TYPE_VMIN,       4, "vmin"},
+        {CSS_TYPE_VMAX,       4, "vmax"},
         {CSS_TYPE_PX,         2, "px"},
         {CSS_TYPE_PT,         2, "pt"},
         {CSS_TYPE_PERCENT,    1, "%"},
@@ -746,6 +750,15 @@ tokenToProperty(pParse, pToken)
                 break;
             }
         }
+    }
+
+    /* Viewport-unit values are resolved against the window size at
+     * style time, so a resize must trigger a restyle from now on. */
+    if (pProp && pParse && pParse->pTree && (
+        pProp->eType == CSS_TYPE_VW || pProp->eType == CSS_TYPE_VH ||
+        pProp->eType == CSS_TYPE_VMIN || pProp->eType == CSS_TYPE_VMAX
+    )) {
+        pParse->pTree->isViewportUnitsSeen = 1;
     }
 
     /* Check if this is a function call. A function call is anything that
@@ -2955,10 +2968,7 @@ mediaQueryMatch(pTree, pQuery)
 
     if (!pQuery) return 1;
 
-    w = Tk_Width(pTree->tkwin);
-    h = Tk_Height(pTree->tkwin);
-    if (w <= 1) w = pTree->options.width;
-    if (h <= 1) h = pTree->options.height;
+    HtmlViewportSize(pTree, &w, &h);
 
     for ( ; pQuery; pQuery = pQuery->pNext) {
         int m;

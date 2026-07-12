@@ -110,6 +110,12 @@ int HtmlCssStyleSheetHasConditions(CssStyleSheet *);
 
 #define CSS_TYPE_REM         20            /* Value in 'rVal' (CSS3) */
 
+/* Viewport units (CSS3). Values in 'rVal'. */
+#define CSS_TYPE_VW          21
+#define CSS_TYPE_VH          22
+#define CSS_TYPE_VMIN        23
+#define CSS_TYPE_VMAX        24
+
 
 /*
  * A single CSS property is represented by an instance of the following

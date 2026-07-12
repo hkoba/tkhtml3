@@ -1162,7 +1162,33 @@ widgetCmdDel(clientData)
  *
  *---------------------------------------------------------------------------
  */
-static void 
+/*
+ *---------------------------------------------------------------------------
+ *
+ * HtmlViewportSize --
+ *
+ *     Report the current viewport (window) size in pixels, falling
+ *     back to the -width/-height options while the window is not yet
+ *     mapped. Used by conditional @media evaluation and by the
+ *     vw/vh/vmin/vmax units.
+ *
+ *---------------------------------------------------------------------------
+ */
+void
+HtmlViewportSize(pTree, pW, pH)
+    HtmlTree *pTree;
+    int *pW;
+    int *pH;
+{
+    int w = Tk_Width(pTree->tkwin);
+    int h = Tk_Height(pTree->tkwin);
+    if (w <= 1) w = pTree->options.width;
+    if (h <= 1) h = pTree->options.height;
+    *pW = w;
+    *pH = h;
+}
+
+static void
 eventHandler(clientData, pEvent)
     ClientData clientData;
     XEvent *pEvent;
@@ -1179,10 +1205,12 @@ eventHandler(clientData, pEvent)
                 iWidth != pTree->iCanvasWidth ||
                 iHeight != pTree->iCanvasHeight
             ) {
-                /* If the stylesheet contains conditional @media rules,
-                 * the new viewport size may switch some of them on or
-                 * off - recompute styles, not just layout. */
-                if (HtmlCssStyleSheetHasConditions(pTree->pStyle)) {
+                /* If the stylesheet contains conditional @media rules
+                 * or viewport units, the new viewport size changes
+                 * computed styles - recompute them, not just layout. */
+                if (HtmlCssStyleSheetHasConditions(pTree->pStyle) ||
+                    pTree->isViewportUnitsSeen
+                ) {
                     HtmlCallbackRestyle(pTree, pTree->pRoot);
                 }
                 HtmlCallbackLayout(pTree, pTree->pRoot);
