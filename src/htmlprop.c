@@ -450,6 +450,16 @@ HtmlPropertyToString(pProp, pzFree)
                 case CSS_TYPE_ATTR:       zFunc = "attr"; break;
                 case CSS_TYPE_COUNTER:    zFunc = "counter"; break;
                 case CSS_TYPE_COUNTERS:   zFunc = "counters"; break;
+                case CSS_TYPE_CALCPCT: {
+                    int iPacked = (int)pProp->v.rVal;
+                    int iPx = HTML_CALCPCT_PX(iPacked);
+                    zRet = HtmlAlloc("HtmlPropertyToString()", 64);
+                    sprintf(zRet, "calc(%.12g%% %c %dpx)",
+                        ((double)HTML_CALCPCT_PCNT(iPacked)) / 100.0,
+                        (iPx < 0) ? '-' : '+', (iPx < 0) ? -iPx : iPx);
+                    *pzFree = zRet;
+                    return zRet;
+                }
                 default:
                     assert(!"Unknown CssProperty.eType value");
             }
@@ -1992,6 +2002,7 @@ propertyValuesSetSize(p, pIVal, p_mask, pProp, allow_mask)
 
     /* Clear the bits in the inherit and percent masks for this property */
     p->values.mask &= ~p_mask;
+    p->values.calcmask &= ~p_mask;
     p->em_mask &= ~p_mask;
     p->ex_mask &= ~p_mask;
     p->rem_mask &= ~p_mask;
@@ -2002,14 +2013,32 @@ propertyValuesSetSize(p, pIVal, p_mask, pProp, allow_mask)
         case CSS_TYPE_PERCENT: {
             int iVal = INTEGER(pProp->v.rVal * 100.0);
             if (
-                (allow_mask & SZ_PERCENT) && 
-                (iVal >= 0 || allow_mask & SZ_NEGATIVE) 
+                (allow_mask & SZ_PERCENT) &&
+                (iVal >= 0 || allow_mask & SZ_NEGATIVE)
             ) {
                 p->values.mask |= p_mask;
                 *pIVal = iVal;
                 return 0;
             }
             return 1;
+        }
+
+        /* calc() percentage + pixel pair (stage 2). The sign of the
+         * resolved value depends on the containing block, so the
+         * SZ_NEGATIVE check cannot run here; consumers already clamp
+         * out-of-range used values. The pixel half is zoom-scaled
+         * like any other pixel length. */
+        case CSS_TYPE_CALCPCT: {
+            int iPacked = (int)pProp->v.rVal;
+            int iPcnt = HTML_CALCPCT_PCNT(iPacked);
+            int iPx = HTML_CALCPCT_PX(iPacked);
+            if (0 == (allow_mask & SZ_PERCENT)) return 1;
+            iPx = INTEGER((double)iPx * p->pTree->options.zoom);
+            if (iPx > 32767 || iPx < -32767) return 1;
+            p->values.mask |= p_mask;
+            p->values.calcmask |= p_mask;
+            *pIVal = HTML_CALCPCT_PACK(iPcnt, iPx);
+            return 0;
         }
 
         case CSS_CONST_INHERIT:
@@ -2020,8 +2049,10 @@ propertyValuesSetSize(p, pIVal, p_mask, pProp, allow_mask)
                 assert(pParent);
 
                 *pIVal = *pInherit;
-                p->values.mask |= 
+                p->values.mask |=
                     (HtmlNodeComputedValues(pParent)->mask & p_mask);
+                p->values.calcmask |=
+                    (HtmlNodeComputedValues(pParent)->calcmask & p_mask);
                 return 0;
             }
             return 1;
@@ -3033,16 +3064,30 @@ HtmlComputedValuesFinish(p)
                 p->values.position.iRight = 0;
                 p->values.position.iLeft = 0;
             } else {
-                p->values.position.iLeft = -1 * p->values.position.iRight;
-                p->values.mask = 
+                p->values.position.iLeft =
+                    (p->values.calcmask & PROP_MASK_RIGHT)
+                    ? HTML_CALCPCT_NEG(p->values.position.iRight)
+                    : -1 * p->values.position.iRight;
+                p->values.mask =
                     (p->values.mask & ~(PROP_MASK_LEFT)) |
                     ((p->values.mask & PROP_MASK_RIGHT) ? PROP_MASK_LEFT : 0);
+                p->values.calcmask =
+                    (p->values.calcmask & ~(PROP_MASK_LEFT)) |
+                    ((p->values.calcmask & PROP_MASK_RIGHT)
+                        ? PROP_MASK_LEFT : 0);
             }
         } else {
-            p->values.position.iRight = -1 * p->values.position.iLeft;
-            p->values.mask = 
+            p->values.position.iRight =
+                (p->values.calcmask & PROP_MASK_LEFT)
+                ? HTML_CALCPCT_NEG(p->values.position.iLeft)
+                : -1 * p->values.position.iLeft;
+            p->values.mask =
                 (p->values.mask & ~(PROP_MASK_RIGHT)) |
                 ((p->values.mask & PROP_MASK_LEFT) ? PROP_MASK_RIGHT : 0);
+            p->values.calcmask =
+                (p->values.calcmask & ~(PROP_MASK_RIGHT)) |
+                ((p->values.calcmask & PROP_MASK_LEFT)
+                    ? PROP_MASK_RIGHT : 0);
         }
 
         /* Then for 'top' and 'bottom' */
@@ -3051,16 +3096,30 @@ HtmlComputedValuesFinish(p)
                 p->values.position.iBottom = 0;
                 p->values.position.iTop = 0;
             } else {
-                p->values.position.iTop = -1 * p->values.position.iBottom;
-                p->values.mask = 
+                p->values.position.iTop =
+                    (p->values.calcmask & PROP_MASK_BOTTOM)
+                    ? HTML_CALCPCT_NEG(p->values.position.iBottom)
+                    : -1 * p->values.position.iBottom;
+                p->values.mask =
                     (p->values.mask & ~(PROP_MASK_TOP)) |
                     ((p->values.mask & PROP_MASK_BOTTOM) ? PROP_MASK_TOP : 0);
+                p->values.calcmask =
+                    (p->values.calcmask & ~(PROP_MASK_TOP)) |
+                    ((p->values.calcmask & PROP_MASK_BOTTOM)
+                        ? PROP_MASK_TOP : 0);
             }
         } else {
-            p->values.position.iBottom = -1 * p->values.position.iTop;
-            p->values.mask = 
+            p->values.position.iBottom =
+                (p->values.calcmask & PROP_MASK_TOP)
+                ? HTML_CALCPCT_NEG(p->values.position.iTop)
+                : -1 * p->values.position.iTop;
+            p->values.mask =
                 (p->values.mask & ~(PROP_MASK_BOTTOM)) |
                 ((p->values.mask & PROP_MASK_TOP) ? PROP_MASK_BOTTOM : 0);
+            p->values.calcmask =
+                (p->values.calcmask & ~(PROP_MASK_BOTTOM)) |
+                ((p->values.calcmask & PROP_MASK_TOP)
+                    ? PROP_MASK_BOTTOM : 0);
         }
     }
 
@@ -3592,9 +3651,19 @@ getPropertyObj(pValues, eProp)
             case LENGTH: {
                 int iVal = *(int *)(v + pDef->iOffset);
                 if (
-                    (pDef->setsizemask & SZ_PERCENT) && 
+                    (pDef->setsizemask & SZ_PERCENT) &&
                     (pValues->mask & pDef->mask)
                 ) {
+                    if (pValues->calcmask & pDef->mask) {
+                        char zCalc[64];
+                        int iPx = HTML_CALCPCT_PX(iVal);
+                        sprintf(zCalc, "calc(%.12g%% %c %dpx)",
+                            ((double)HTML_CALCPCT_PCNT(iVal)) / 100.0,
+                            (iPx < 0) ? '-' : '+',
+                            (iPx < 0) ? -iPx : iPx);
+                        pValue = Tcl_NewStringObj(zCalc, -1);
+                        break;
+                    }
                     pValue = Tcl_NewDoubleObj(((double)iVal) / 100.0);
                     Tcl_AppendToObj(pValue, "%", -1);
                     break;
@@ -3821,14 +3890,16 @@ HtmlComputedValuesCompare(pV1, pV2)
             case LENGTH: {
                 int *pL1 = (int *)(v1 + pDef->iOffset);
                 int *pL2 = (int *)(v2 + pDef->iOffset);
- 
+
                 if (
-                    *pL1 != *pL2 || 
-                    ((pDef->mask & pV1->mask) != (pDef->mask & pV2->mask))
+                    *pL1 != *pL2 ||
+                    ((pDef->mask & pV1->mask) != (pDef->mask & pV2->mask)) ||
+                    ((pDef->mask & pV1->calcmask) !=
+                     (pDef->mask & pV2->calcmask))
                 ) {
                     return HTML_REQUIRE_LAYOUT;
                 }
- 
+
                 break;
             }
 

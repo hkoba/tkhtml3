@@ -48,6 +48,11 @@
 #                 two-axis gap, column wrapping, baseline alignment,
 #                 the flex-flow shorthand.
 #
+#     modern-13.* calc() stage 2: percentage + absolute-length mixes
+#                 resolved against the containing block at layout
+#                 time; pure-percent arithmetic folds to a plain
+#                 percentage; % + relative units still fall back.
+#
 # Note: when testing with properties, prefer 'color' - the initial value
 # of e.g. 'border-top-width' is "medium" (2px), which is easy to confuse
 # with a test value.
@@ -631,10 +636,12 @@ tcltest::test modern-10.0 {calc arithmetic} -body {
 } -result {150px 50px 90px 60px 96px -10px}
 
 tcltest::test modern-10.1 {unsupported calc invalidates, cascade falls back} -body {
+  # calc(100% - 20px) became SUPPORTED in stage 2 (see modern-13.*);
+  # mixed relative units are still invalid and must fall back.
   .h reset
   .h style {
-    #a { width: 77px; width: calc(100% - 20px); display: block }
-    #b { width: 88px; width: calc(1em + 5px); display: block }
+    #a { width: 77px; width: calc(1em + 5px); display: block }
+    #b { width: 88px; width: calc(50% + 1em); display: block }
   }
   .h parse -final {<body><div id="a">a</div><div id="b">b</div></body>}
   list [property [idnode a] width] [property [idnode b] width]
@@ -957,5 +964,82 @@ tcltest::test modern-12.9 {nowrap is unaffected by align-content} -body {
   } {<div id="f"><div id="a"></div></div>}
   relbox a f
 } -result {0 0 100 120}
+
+#--------------------------------------------------------------------------
+# modern-13.*: calc() stage 2 (percentage + absolute length).
+#
+tcltest::test modern-13.0 {calc % + px resolves against the containing block} -body {
+  flexpage {
+    #wrap { width: 600px }
+    #a { width: calc(100% - 20px); display: block; height: 10px }
+    #b { width: calc(50% + 10px); display: block; height: 10px }
+  } {<div id="wrap"><div id="a">.</div><div id="b">.</div></div>}
+  list [xw [idnode a]] [xw [idnode b]] \
+       [property [idnode a] width] [property [idnode b] width]
+} -result {{0 580} {0 310} {calc(100% - 20px)} {calc(50% + 10px)}}
+
+tcltest::test modern-13.1 {pure-percent calc folds to a plain percentage} -body {
+  flexpage {
+    #wrap { width: 600px }
+    #a { width: calc(100% / 4); display: block; height: 10px }
+  } {<div id="wrap"><div id="a">.</div></div>}
+  list [xw [idnode a]] [property [idnode a] width]
+} -result {{0 150} 25.0%}
+
+tcltest::test modern-13.2 {multiplication distributes over both components} -body {
+  flexpage {
+    #wrap { width: 600px }
+    #a { width: calc(2 * (25% - 5px)); display: block; height: 10px }
+  } {<div id="wrap"><div id="a">.</div></div>}
+  list [xw [idnode a]] [property [idnode a] width]
+} -result {{0 290} {calc(50% - 10px)}}
+
+tcltest::test modern-13.3 {calc % in margins} -body {
+  flexpage {
+    #wrap { width: 600px }
+    #a { margin-left: calc(25% + 5px); width: 50px; display: block;
+         height: 10px }
+  } {<div id="wrap"><div id="a">.</div></div>}
+  xw [idnode a]
+} -result {155 50}
+
+tcltest::test modern-13.4 {var() inside a stage-2 calc} -body {
+  flexpage {
+    :root { --off: 30px }
+    #wrap { width: 600px }
+    #a { width: calc(100% - var(--off)); display: block; height: 10px }
+  } {<div id="wrap"><div id="a">.</div></div>}
+  xw [idnode a]
+} -result {0 570}
+
+tcltest::test modern-13.5 {calc % on position relative left} -body {
+  flexpage {
+    #wrap { width: 600px }
+    #a { position: relative; left: calc(50% - 10px); width: 40px;
+         height: 10px }
+  } {<div id="wrap"><div id="a">.</div></div>}
+  xw [idnode a]
+} -result {290 40}
+
+tcltest::test modern-13.6 {calc % with flex-basis} -body {
+  flexpage {
+    #f { display: flex; width: 600px }
+    #a { flex: 0 0 calc(50% - 100px); height: 10px }
+    #b { flex: 1 0 0%; height: 10px }
+  } {<div id="f"><div id="a">.</div><div id="b">.</div></div>}
+  list [xw [idnode a]] [xw [idnode b]]
+} -result {{0 200} {200 400}}
+
+tcltest::test modern-13.7 {% with non-absolute units still falls back} -body {
+  flexpage {
+    #wrap { width: 600px }
+    #a { width: 111px; width: calc(50% + 1em); display: block }
+    #b { width: 122px; width: calc(50% + 2vw); display: block }
+    #c { width: 133px; width: calc(50% + 3); display: block }
+  } {<div id="wrap"><div id="a">.</div><div id="b">.</div>
+     <div id="c">.</div></div>}
+  list [property [idnode a] width] [property [idnode b] width] \
+       [property [idnode c] width]
+} -result {111px 122px 133px}
 
 finish_test

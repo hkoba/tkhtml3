@@ -116,6 +116,12 @@ int HtmlCssStyleSheetHasConditions(CssStyleSheet *);
 #define CSS_TYPE_VMIN        23
 #define CSS_TYPE_VMAX        24
 
+/* calc() stage 2: a "<percentage> +/- <absolute length>" mix that can
+ * only be resolved against the containing block at layout time. The
+ * two components are packed into a single int stored (exactly) in
+ * 'rVal': see the HTML_CALCPCT_* macros in htmlprop.h. */
+#define CSS_TYPE_CALCPCT     25
+
 
 /*
  * A single CSS property is represented by an instance of the following

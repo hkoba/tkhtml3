@@ -260,10 +260,13 @@ tableColWidthSingleSpan(pNode, col, colspan, row, rowspan, pContext)
         aMaxWidth[col] = MAX(aMaxWidth[col], max + box.iLeft + box.iRight);
         assert(aMinWidth[col] <= aMaxWidth[col]);
         
-        if (pV->mask & PROP_MASK_WIDTH) {
+        if (pV->calcmask & PROP_MASK_WIDTH) {
+            /* A calc() percentage+pixel width cannot join the legacy
+             * table width negotiation; treat the cell as width:auto. */
+        } else if (pV->mask & PROP_MASK_WIDTH) {
 
             /* The computed value of the 'width' property is a percentage */
-            float val = ((float)pV->iWidth) / 100.0; 
+            float val = ((float)pV->iWidth) / 100.0;
             switch (aReq[col].eType) {
                 case CELL_WIDTH_AUTO:
                 case CELL_WIDTH_PIXELS:
@@ -382,10 +385,14 @@ getReqWidth(pNode, pReq)
     CellReqWidth *pReq;
 {
     HtmlComputedValues *pV = HtmlNodeComputedValues(pNode);
-    if (pV->mask & PROP_MASK_WIDTH) {
+    if (pV->calcmask & PROP_MASK_WIDTH) {
+        /* calc() percentage+pixel widths do not join the legacy table
+         * width negotiation; treat as auto. */
+        pReq->eType = CELL_WIDTH_AUTO;
+    } else if (pV->mask & PROP_MASK_WIDTH) {
         /* The computed value of the 'width' property is a percentage */
         pReq->eType = CELL_WIDTH_PERCENT;
-        pReq->x.fVal = ((float)pV->iWidth) / 100.0; 
+        pReq->x.fVal = ((float)pV->iWidth) / 100.0;
     } else if (pV->iWidth > 0) {
         pReq->eType = CELL_WIDTH_PIXELS;
         pReq->x.iVal = pV->iWidth;

@@ -685,27 +685,40 @@ doUrlCmd(pParse, zArg, nArg)
  *---------------------------------------------------------------------------
  */
 /*--------------------------------------------------------------------------
- * calc() - stage 1 (see agent_docs/roadmap.md).
+ * calc() - stages 1 and 2 (see agent_docs/roadmap.md).
  *
- * A calc() expression is evaluated at parse time into a single
- * unit-tagged value: all absolute units fold to px using the CSS-fixed
- * ratios (1in = 96px, 1pt = 4/3px, ...), and same-unit relative terms
- * fold together (calc(1rem + 0.5rem) -> 1.5rem). The result becomes an
- * ordinary length property, so em/rem/vw results keep their deferred
+ * A calc() expression is evaluated at parse time. Stage 1: all
+ * absolute units fold to px using the CSS-fixed ratios (1in = 96px,
+ * 1pt = 4/3px, ...), and same-unit relative terms fold together
+ * (calc(1rem + 0.5rem) -> 1.5rem). The result becomes an ordinary
+ * length property, so em/rem/vw results keep their deferred
  * resolution behaviour.
  *
- * Out of scope (the expression is then rejected, which invalidates the
- * declaration and lets the cascade fall back): percentages, and mixing
- * different relative units (calc(1em + 2px)). Note that var()
- * references inside calc() DO work: substitution happens textually
- * before the declaration is re-parsed.
+ * Stage 2: a percentage component may mix with an ABSOLUTE length
+ * component (calc(100% - 20px)). The pair is carried as a
+ * CSS_TYPE_CALCPCT property (both halves packed into one int, see
+ * HTML_CALCPCT_* in htmlprop.h) and resolved against the containing
+ * block at layout time via the PIXELVAL() macro. A pure-percentage
+ * expression (calc(100%/4)) folds to an ordinary CSS_TYPE_PERCENT.
+ *
+ * Still out of scope (the expression is then rejected, which
+ * invalidates the declaration and lets the cascade fall back): mixing
+ * different relative units (calc(1em + 2px)) and mixing % with
+ * non-absolute units (calc(50% + 1em)), plus components outside the
+ * 16-bit packed range. Note that var() references inside calc() DO
+ * work: substitution happens textually before the declaration is
+ * re-parsed.
  *--------------------------------------------------------------------------
  */
 typedef struct CalcValue CalcValue;
 struct CalcValue {
-    double r;
-    int eUnit;         /* CSS_TYPE_FLOAT for a bare number, else a
-                        * length CSS_TYPE_* (absolutes already px) */
+    double rLen;       /* Length or number component, in eUnit units */
+    int eUnit;         /* Unit of rLen: CSS_TYPE_FLOAT for a bare
+                        * number, else a length CSS_TYPE_* (absolutes
+                        * already px). Meaningless when hasLen == 0. */
+    int hasLen;        /* True if a number/length term contributed */
+    double rPct;       /* Percentage component */
+    int hasPct;        /* True if a '%' term contributed */
 };
 
 static int calcExpr(const char **, const char *, CalcValue *, int);
@@ -747,10 +760,11 @@ calcFactor(pz, zEnd, pRes, nDepth)
         int nCopy = MIN((int)(zEnd - z), (int)sizeof(zBuf) - 1);
         const char *zUnit;
         int nUnit;
+        double r;
 
         memcpy(zBuf, z, nCopy);
         zBuf[nCopy] = '\0';
-        pRes->r = strtod(zBuf, &zNumEnd);
+        r = strtod(zBuf, &zNumEnd);
         if (zNumEnd == zBuf) return 1;
         *pz = &z[zNumEnd - zBuf];
 
@@ -760,20 +774,32 @@ calcFactor(pz, zEnd, pRes, nDepth)
             (isalpha((unsigned char)**pz) || **pz == '%')) (*pz)++;
         nUnit = *pz - zUnit;
 
+        pRes->rLen = r;
+        pRes->hasLen = 1;
+        pRes->rPct = 0.0;
+        pRes->hasPct = 0;
+
         if (nUnit == 0) {
             pRes->eUnit = CSS_TYPE_FLOAT;
+        } else if (nUnit == 1 && zUnit[0] == '%') {
+            /* Stage 2: a pure percentage term */
+            pRes->rLen = 0.0;
+            pRes->hasLen = 0;
+            pRes->eUnit = CSS_TYPE_PX;
+            pRes->rPct = r;
+            pRes->hasPct = 1;
         } else if (nUnit == 2 && !strnicmp(zUnit, "px", 2)) {
             pRes->eUnit = CSS_TYPE_PX;
         } else if (nUnit == 2 && !strnicmp(zUnit, "pt", 2)) {
-            pRes->eUnit = CSS_TYPE_PX; pRes->r *= 96.0/72.0;
+            pRes->eUnit = CSS_TYPE_PX; pRes->rLen *= 96.0/72.0;
         } else if (nUnit == 2 && !strnicmp(zUnit, "pc", 2)) {
-            pRes->eUnit = CSS_TYPE_PX; pRes->r *= 16.0;
+            pRes->eUnit = CSS_TYPE_PX; pRes->rLen *= 16.0;
         } else if (nUnit == 2 && !strnicmp(zUnit, "in", 2)) {
-            pRes->eUnit = CSS_TYPE_PX; pRes->r *= 96.0;
+            pRes->eUnit = CSS_TYPE_PX; pRes->rLen *= 96.0;
         } else if (nUnit == 2 && !strnicmp(zUnit, "cm", 2)) {
-            pRes->eUnit = CSS_TYPE_PX; pRes->r *= 96.0/2.54;
+            pRes->eUnit = CSS_TYPE_PX; pRes->rLen *= 96.0/2.54;
         } else if (nUnit == 2 && !strnicmp(zUnit, "mm", 2)) {
-            pRes->eUnit = CSS_TYPE_PX; pRes->r *= 96.0/25.4;
+            pRes->eUnit = CSS_TYPE_PX; pRes->rLen *= 96.0/25.4;
         } else if (nUnit == 2 && !strnicmp(zUnit, "em", 2)) {
             pRes->eUnit = CSS_TYPE_EM;
         } else if (nUnit == 2 && !strnicmp(zUnit, "ex", 2)) {
@@ -789,7 +815,7 @@ calcFactor(pz, zEnd, pRes, nDepth)
         } else if (nUnit == 4 && !strnicmp(zUnit, "vmax", 4)) {
             pRes->eUnit = CSS_TYPE_VMAX;
         } else {
-            /* '%' (stage 2) or an unknown unit */
+            /* Unknown unit */
             return 1;
         }
         return 0;
@@ -821,20 +847,30 @@ calcTerm(pz, zEnd, pRes, nDepth)
         (*pz)++;
         if (calcFactor(pz, zEnd, &rhs, nDepth)) return 1;
 
+        /* A "bare number" operand: a plain <number> with no unit and
+         * no percentage component. */
+#define CALC_IS_NUMBER(v) \
+        ((v).hasLen && (v).eUnit == CSS_TYPE_FLOAT && !(v).hasPct)
+
         if (op == '*') {
-            /* At least one side must be a bare number */
-            if (pRes->eUnit == CSS_TYPE_FLOAT) {
-                pRes->r *= rhs.r;
-                pRes->eUnit = rhs.eUnit;
-            } else if (rhs.eUnit == CSS_TYPE_FLOAT) {
-                pRes->r *= rhs.r;
+            /* At least one side must be a bare number; both the
+             * length and the percentage component scale. */
+            if (CALC_IS_NUMBER(*pRes)) {
+                double k = pRes->rLen;
+                *pRes = rhs;
+                pRes->rLen *= k;
+                pRes->rPct *= k;
+            } else if (CALC_IS_NUMBER(rhs)) {
+                pRes->rLen *= rhs.rLen;
+                pRes->rPct *= rhs.rLen;
             } else {
                 return 1;
             }
         } else {
             /* Divisor must be a nonzero bare number */
-            if (rhs.eUnit != CSS_TYPE_FLOAT || rhs.r == 0.0) return 1;
-            pRes->r /= rhs.r;
+            if (!CALC_IS_NUMBER(rhs) || rhs.rLen == 0.0) return 1;
+            pRes->rLen /= rhs.rLen;
+            pRes->rPct /= rhs.rLen;
         }
     }
 }
@@ -867,18 +903,38 @@ calcExpr(pz, zEnd, pRes, nDepth)
 
         if (calcTerm(pz, zEnd, &rhs, nDepth)) return 1;
 
-        /* Both bare numbers, or both the same unit */
-        if (pRes->eUnit != rhs.eUnit) return 1;
-        if (op == '+') {
-            pRes->r += rhs.r;
+        if (!pRes->hasPct && !rhs.hasPct) {
+            /* Stage 1 rule: both bare numbers, or both the same unit */
+            if (pRes->eUnit != rhs.eUnit) return 1;
+            if (op == '+') {
+                pRes->rLen += rhs.rLen;
+            } else {
+                pRes->rLen -= rhs.rLen;
+            }
         } else {
-            pRes->r -= rhs.r;
+            /* Stage 2: a percentage is involved. <number> +/-
+             * <percentage> is invalid per spec, and the length
+             * component must be absolute (already px). */
+            if (CALC_IS_NUMBER(*pRes) || CALC_IS_NUMBER(rhs)) return 1;
+            if (pRes->hasLen && pRes->eUnit != CSS_TYPE_PX) return 1;
+            if (rhs.hasLen && rhs.eUnit != CSS_TYPE_PX) return 1;
+            if (op == '+') {
+                pRes->rLen += rhs.rLen;
+                pRes->rPct += rhs.rPct;
+            } else {
+                pRes->rLen -= rhs.rLen;
+                pRes->rPct -= rhs.rPct;
+            }
+            pRes->hasLen = (pRes->hasLen || rhs.hasLen);
+            pRes->hasPct = 1;
+            pRes->eUnit = CSS_TYPE_PX;
         }
     }
 }
 
 /* z/n is the text between the parens of "calc(...)". Returns a normal
- * length/number property, or NULL if the expression is not supported.
+ * length/number/percent/calc-pair property, or NULL if the expression
+ * is not supported.
  */
 static CssProperty *
 calcToProperty(z, n)
@@ -895,8 +951,28 @@ calcToProperty(z, n)
     if (p != zEnd) return 0;
 
     pProp = HtmlNew(CssProperty);
-    pProp->eType = v.eUnit;
-    pProp->v.rVal = v.r;
+    if (v.hasPct) {
+        int px = INTEGER(v.rLen);
+        int pcnt100 = INTEGER(v.rPct * 100.0);
+        if (!v.hasLen || px == 0) {
+            /* Pure percentage arithmetic: an ordinary percent value */
+            pProp->eType = CSS_TYPE_PERCENT;
+            pProp->v.rVal = v.rPct;
+        } else if (
+            pcnt100 > 32767 || pcnt100 < -32767 ||
+            px > 32767 || px < -32767
+        ) {
+            /* Out of the packed 16-bit range: unsupported */
+            HtmlFree(pProp);
+            return 0;
+        } else {
+            pProp->eType = CSS_TYPE_CALCPCT;
+            pProp->v.rVal = (double)HTML_CALCPCT_PACK(pcnt100, px);
+        }
+    } else {
+        pProp->eType = v.eUnit;
+        pProp->v.rVal = v.rLen;
+    }
     return pProp;
 }
 
@@ -968,8 +1044,8 @@ tokenToProperty(pParse, pToken)
         }
     }
 
-    /* calc() - evaluated at parse time into a single unit (stage 1,
-     * no percentages, no mixed relative units - see calcToProperty).
+    /* calc() - evaluated at parse time into a single unit, a percent,
+     * or a percent+pixel pair (stages 1 and 2 - see calcToProperty).
      * An unsupported expression is left alone here: it then falls
      * through to the generic RAW handling below, whose value is
      * rejected by every property setter (it contains parentheses), so

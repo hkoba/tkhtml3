@@ -227,6 +227,11 @@ struct HtmlComputedValues {
 
     HtmlPropMask mask;
 
+    /* Set alongside the corresponding 'mask' bit when the iXXX value
+     * is a packed calc() percentage+pixel pair rather than a plain
+     * percentage - see the HTML_CALCPCT_* macros below. */
+    HtmlPropMask calcmask;
+
     unsigned char eDisplay;           /* 'display' */
     unsigned char eFloat;             /* 'float' */
     unsigned char eClear;             /* 'clear' */
@@ -545,12 +550,34 @@ int HtmlComputedValuesCompare(HtmlComputedValues *, HtmlComputedValues *);
 #define HTML_COMPUTED_TEXT_INDENT     iTextIndent
 #define HTML_COMPUTED_FLEX_BASIS      iFlexBasis
 
+/* calc() stage 2 values - "calc(<pct> +/- <px>)" - store both
+ * components packed into the ordinary iXXX int: the percentage (times
+ * 100, like a plain percentage) in the high 16 bits and the pixel
+ * offset in the low 16 bits, each as a signed 16-bit quantity.
+ * Components outside +/-32767 are rejected at parse time. The
+ * corresponding bit is set in BOTH HtmlComputedValues.mask (so all
+ * consumers take their percentage path) and .calcmask (so that path
+ * decodes the pair instead of multiplying the raw int).
+ */
+#define HTML_CALCPCT_PACK(pcnt100, px) \
+    ((int)((((unsigned int)(pcnt100) & 0xFFFF) << 16) | \
+           ((unsigned int)(px) & 0xFFFF)))
+#define HTML_CALCPCT_PCNT(v) ((int)(short)(((unsigned int)(v)) >> 16))
+#define HTML_CALCPCT_PX(v)   ((int)(short)((unsigned int)(v) & 0xFFFF))
+#define HTML_CALCPCT_NEG(v)  \
+    HTML_CALCPCT_PACK(-HTML_CALCPCT_PCNT(v), -HTML_CALCPCT_PX(v))
+
+/* Resolve a packed calc pair against percent_of pixels */
+#define HTML_CALCPCT_RESOLVE(v, percent_of) ( \
+    (HTML_CALCPCT_PCNT(v) * (percent_of)) / 10000 + HTML_CALCPCT_PX(v) \
+)
+
 /* The PIXELVAL macro takes three arguments:
- * 
+ *
  *    pV         - Pointer to HtmlComputedValues structure.
  *
  *    prop       - Property identifier (i.e. MARGIN_LEFT). The
- *                 HTML_COMPUTED_XXX macros define the set of acceptable 
+ *                 HTML_COMPUTED_XXX macros define the set of acceptable
  *                 identifiers.
  *
  *    percent_of - The pixel value used to calculate percentage values against.
@@ -567,6 +594,8 @@ int HtmlComputedValuesCompare(HtmlComputedValues *, HtmlComputedValues *);
     (!pV ? 0 :                            \
     ((pV)->mask & PROP_MASK_ ## prop) ? ( \
         ((percent_of) <= 0) ? (percent_of) : \
+        ((pV)->calcmask & PROP_MASK_ ## prop) ? \
+        HTML_CALCPCT_RESOLVE((pV)-> HTML_COMPUTED_ ## prop, (percent_of)) : \
         (((pV)-> HTML_COMPUTED_ ## prop * (percent_of)) / 10000) \
     ) : ((pV)-> HTML_COMPUTED_ ## prop) \
 ))

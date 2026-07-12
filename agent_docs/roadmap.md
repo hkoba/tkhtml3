@@ -95,9 +95,14 @@ HTML/CSS stop degrading:
 
 **Status: COMPLETE (2026-07-12).** var()/custom properties, conditional
 @media (min/max-width/height incl. restyle-on-resize), vw/vh/vmin/vmax
-and calc() stage 1 all landed, one commit each. calc() stage 2
-(percentage mixing) remains open as planned. Tests: modern-7..10 in
-tests/modern.test. Implementation notes worth knowing: var() rides the
+and calc() stage 1 all landed, one commit each. **calc() stage 2
+(percentage + absolute-length mixing) landed 2026-07-13**: the pair is
+packed into the ordinary iXXX int (16-bit % x100 high half / 16-bit px
+low half, ranges beyond +/-32767 fall back) with a second
+per-property mask (HtmlComputedValues.calcmask) telling the PIXELVAL()
+percentage path to decode instead of multiply; % + em/vw etc. still
+falls back. Tests: modern-7..10 and modern-13 in tests/modern.test.
+Implementation notes worth knowing: var() rides the
 duplicate-declaration fallback exactly as predicted below; the
 function-token lexer needed a nesting fix for calc((a+b)*2); media
 query + viewport-unit restyles share one ConfigureNotify hook.

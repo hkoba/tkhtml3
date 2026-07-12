@@ -2263,10 +2263,14 @@ drawBox(pQuery, pItem, pBox, drawable, x, y, w, h, xview, yview, flags)
             iPosY = pV->iBackgroundPositionY;
             if (pV->eBackgroundAttachment == CSS_CONST_SCROLL) {
                 if ( pV->mask & PROP_MASK_BACKGROUND_POSITION_X ){
-                    iPosX = (double)iPosX * (double)(bg_w - iWidth) / 10000.0;
+                    iPosX = (pV->calcmask & PROP_MASK_BACKGROUND_POSITION_X)
+                        ? HTML_CALCPCT_RESOLVE(iPosX, bg_w - iWidth)
+                        : (double)iPosX * (double)(bg_w - iWidth) / 10000.0;
                 }
                 if ( pV->mask & PROP_MASK_BACKGROUND_POSITION_Y ){
-                    iPosY = (double)iPosY * (double)(bg_h - iHeight) / 10000.0;
+                    iPosY = (pV->calcmask & PROP_MASK_BACKGROUND_POSITION_Y)
+                        ? HTML_CALCPCT_RESOLVE(iPosY, bg_h - iHeight)
+                        : (double)iPosY * (double)(bg_h - iHeight) / 10000.0;
                 }
                 iPosX += bg_x;
                 iPosY += bg_y;
@@ -2275,10 +2279,14 @@ drawBox(pQuery, pItem, pBox, drawable, x, y, w, h, xview, yview, flags)
                 int rw = Tk_Width(pTree->tkwin);
                 int rh = Tk_Height(pTree->tkwin);
                 if ( pV->mask & PROP_MASK_BACKGROUND_POSITION_X ){
-                    iPosX = (double)iPosX * (double)(rw - iWidth) / 10000.0;
+                    iPosX = (pV->calcmask & PROP_MASK_BACKGROUND_POSITION_X)
+                        ? HTML_CALCPCT_RESOLVE(iPosX, rw - iWidth)
+                        : (double)iPosX * (double)(rw - iWidth) / 10000.0;
                 }
                 if ( pV->mask & PROP_MASK_BACKGROUND_POSITION_Y ){
-                    iPosY = (double)iPosY * (double)(rh - iHeight) / 10000.0;
+                    iPosY = (pV->calcmask & PROP_MASK_BACKGROUND_POSITION_Y)
+                        ? HTML_CALCPCT_RESOLVE(iPosY, rh - iHeight)
+                        : (double)iPosY * (double)(rh - iHeight) / 10000.0;
                 }
                 iPosX -= xview;
                 iPosY -= yview;

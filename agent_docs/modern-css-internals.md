@@ -135,6 +135,41 @@ in cssGetToken() used to cut the token at the FIRST ')'; it now counts
 nesting. Without that, calc((a + b) * 2) and var() fallbacks
 containing functions were truncated mid-token.
 
+## calc() stage 2: percentage + absolute length (css.c + htmlprop)
+
+calc(100% - 20px) must survive to LAYOUT time (the containing block
+is unknown earlier). Rather than the invasive two-int representation
+the roadmap feared, both components fit the existing storage:
+
+* The evaluator (CalcValue) carries {rLen,eUnit,hasLen} + {rPct,
+  hasPct}. * and / scale both components; + and - require the length
+  side to be absolute (already px). <number> +/- <percentage> is
+  invalid per spec. Pure-% arithmetic (calc(100%/4)) exits as an
+  ordinary CSS_TYPE_PERCENT.
+* A real mix becomes CSS_TYPE_CALCPCT: %x100 in the high 16 bits, px
+  offset in the low 16 (HTML_CALCPCT_* macros, htmlprop.h), packed
+  into the normal iXXX int. Components beyond +/-32767 are rejected
+  at parse time (fallback). Doubles hold the packed int exactly, so
+  it travels in CssProperty.v.rVal.
+* HtmlComputedValues.calcmask (a second HtmlPropMask, hashed like
+  everything else) marks which properties hold packed pairs. The
+  PIXELVAL() percentage branch checks it and decodes instead of
+  multiplying. Setting a bit in calcmask REQUIRES the same bit in
+  mask.
+* Only propertyValuesSetSize() accepts CALCPCT (SZ_PERCENT
+  properties; the px half is zoom-scaled there). font-size,
+  line-height, vertical-align etc. reject it -> declaration invalid
+  -> cascade fallback, as always.
+* Manual percentage consumers (everything that does not use
+  PIXELVAL) needed individual treatment: background-position
+  (htmldraw.c) decodes properly; table cell widths (htmltable.c x2)
+  treat calc as width:auto (the legacy width negotiation cannot hold
+  a pair); the 9.4.3 left/right/top/bottom negation in
+  HtmlComputedValuesFinish negates per component
+  (HTML_CALCPCT_NEG) and transfers calcmask bits alongside mask
+  bits. If you add a new "mask & PROP_MASK_X" consumer, handle
+  calcmask there too.
+
 ## Smaller Tier 1 internals
 
 * **:not()**: implemented as an `isNot` flag on CssSelector, negating
