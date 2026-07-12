@@ -616,16 +616,44 @@ HtmlFlexLayout(pLayout, pBox, pNode)
     }
 
     /* Under a min-max width probe, only the intrinsic width matters.
-     * Row: min-content = sum of item min-contents (nothing wraps in a
-     * nowrap flex row); max-content = sum of item max-contents.
-     * Column: the max over the items. No drawing is allowed here. */
+     * Row: min-content = sum of the item contributions (nothing wraps
+     * in a nowrap flex row); max-content = sum of the items'
+     * hypothetical widths. Column: the max over the items. A definite
+     * non-percentage width (or flex-basis, in a row) overrides the
+     * content measure - resolving with a percent-of of PIXELVAL_AUTO
+     * turns percentages into "auto". No drawing is allowed here. */
     if (pLayout->minmaxTest) {
         int iTotal = 0;
         for (ii = 0; ii < nItem; ii++) {
             FlexItem *p = &aItem[ii];
-            int iMinC, iMaxC, iVal;
+            HtmlComputedValues *pIV = HtmlNodeComputedValues(p->pNode);
+            int iMinC, iMaxC, iSpec, iVal;
+
             blockMinMaxWidth(pLayout, p->pNode, &iMinC, &iMaxC);
-            iVal = (pLayout->minmaxTest == MINMAX_TEST_MIN) ? iMinC : iMaxC;
+
+            iSpec = PIXELVAL_AUTO;
+            if (!isColumn) {
+                iSpec = PIXELVAL(pIV, FLEX_BASIS, PIXELVAL_AUTO);
+            }
+            if (iSpec == PIXELVAL_AUTO) {
+                iSpec = PIXELVAL(pIV, WIDTH, PIXELVAL_AUTO);
+            }
+            if (iSpec != PIXELVAL_AUTO) {
+                iSpec = boxSizingSubtract(pLayout, p->pNode, -1, iSpec, 0);
+            }
+
+            if (pLayout->minmaxTest == MINMAX_TEST_MIN) {
+                if (iSpec == PIXELVAL_AUTO) {
+                    iVal = iMinC;
+                } else if (pIV->iFlexShrink > 0 && !isColumn) {
+                    iVal = MIN(iMinC, iSpec);
+                } else {
+                    iVal = iSpec;
+                }
+            } else {
+                iVal = (iSpec == PIXELVAL_AUTO) ? iMaxC : iSpec;
+            }
+
             iVal += p->box.iLeft + p->box.iRight;
             iVal += (p->margin.leftAuto ? 0 : p->margin.margin_left);
             iVal += (p->margin.rightAuto ? 0 : p->margin.margin_right);
@@ -786,7 +814,20 @@ HtmlFlexLayout(pLayout, pBox, pNode)
             }
         }
     } else {
-        flexJustify(pV->eJustifyContent, iFree, nItem, &iLead, &iBetween);
+        /* In a -reverse container the main axis itself is flipped, so
+         * flex-start packs items at the far (right/bottom) edge. The
+         * items are already iterated in reverse order below; flipping
+         * start<->end here completes the axis reversal (the other
+         * justify-content values are symmetric). */
+        int eJustify = pV->eJustifyContent;
+        if (isReverse) {
+            if (eJustify == CSS_CONST_FLEX_START) {
+                eJustify = CSS_CONST_FLEX_END;
+            } else if (eJustify == CSS_CONST_FLEX_END) {
+                eJustify = CSS_CONST_FLEX_START;
+            }
+        }
+        flexJustify(eJustify, iFree, nItem, &iLead, &iBetween);
     }
 
     /* Place and draw the items */

@@ -11,6 +11,7 @@ sourcefile dynamic.test
 sourcefile options.test
 sourcefile css3.test
 sourcefile modern.test
+sourcefile bootstrap5.test
 
 finish_test
 

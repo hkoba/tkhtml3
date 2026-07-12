@@ -1,0 +1,75 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Bootstrap 5 - grid system (flexbox)</title>
+<link rel="stylesheet" href="css/bootstrap.css">
+<style>
+/* visualize grid cells */
+.row > * .demo { background-color: #ddddff; border: 1px solid #9999cc;
+                 text-align: center; padding: 4px 0; margin-bottom: 8px; }
+h2 { margin-top: 1rem }
+</style>
+</head>
+<body>
+<div class="container-fluid">
+  <h2>Equal columns (.col)</h2>
+  <div class="row">
+    <div class="col"><div class="demo">col</div></div>
+    <div class="col"><div class="demo">col</div></div>
+    <div class="col"><div class="demo">col</div></div>
+  </div>
+
+  <h2>Sized columns</h2>
+  <div class="row">
+    <div class="col-12"><div class="demo">col-12</div></div>
+  </div>
+  <div class="row">
+    <div class="col-6"><div class="demo">col-6</div></div>
+    <div class="col-6"><div class="demo">col-6</div></div>
+  </div>
+  <div class="row">
+    <div class="col-4"><div class="demo">col-4</div></div>
+    <div class="col-8"><div class="demo">col-8</div></div>
+  </div>
+  <div class="row">
+    <div class="col-3"><div class="demo">col-3</div></div>
+    <div class="col-3"><div class="demo">col-3</div></div>
+    <div class="col-3"><div class="demo">col-3</div></div>
+    <div class="col-3"><div class="demo">col-3</div></div>
+  </div>
+
+  <h2>Mixed auto + sized</h2>
+  <div class="row">
+    <div class="col-6"><div class="demo">col-6</div></div>
+    <div class="col"><div class="demo">col (fills rest)</div></div>
+  </div>
+
+  <h2>Justification</h2>
+  <div class="row justify-content-center">
+    <div class="col-4"><div class="demo">centered col-4</div></div>
+  </div>
+  <div class="row justify-content-between">
+    <div class="col-3"><div class="demo">col-3</div></div>
+    <div class="col-3"><div class="demo">col-3</div></div>
+  </div>
+
+  <h2>Auto margins (.ms-auto)</h2>
+  <div class="row">
+    <div class="col-3"><div class="demo">col-3</div></div>
+    <div class="col-3 ms-auto"><div class="demo">col-3 ms-auto</div></div>
+  </div>
+
+  <h2>Responsive (.col-md-*: two columns at &ge;768px wide, stacked when narrow)</h2>
+  <div class="row">
+    <div class="col-md-6"><div class="demo">col-md-6</div></div>
+    <div class="col-md-6"><div class="demo">col-md-6</div></div>
+  </div>
+
+  <h2>Known stage-A limitation</h2>
+  <p>Rows whose columns sum past 12 overflow to the right instead of
+  wrapping, and .col-md-* columns below their breakpoint overflow
+  instead of stacking (both need flex-wrap, which is stage B - see
+  agent_docs/roadmap.md).</p>
+</div>
+</body>
+</html>

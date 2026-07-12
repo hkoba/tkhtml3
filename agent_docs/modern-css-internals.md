@@ -1,9 +1,9 @@
-# How the modern-CSS features (roadmap Tiers 1-2) are wired
+# How the modern-CSS features (roadmap Tiers 1-3A) are wired
 
-Written 2026-07-12 after landing both tiers. This is the map for
-anyone touching var()/@media/viewport-units/calc() or building on them
-(calc stage 2, flexbox property plumbing, @layer...). Commit range:
-ed666e3..a83d689.
+Written 2026-07-12 after landing Tiers 1-2 (commit range
+ed666e3..a83d689); flexbox stage A (Tier 3A) added the same day. This
+is the map for anyone touching var()/@media/viewport-units/calc()/
+flexbox or building on them (calc stage 2, flex-wrap, @layer...).
 
 ## Custom properties and var() (css.c)
 
@@ -169,6 +169,55 @@ containing functions were truncated mid-token.
   open <p> close implicitly (HtmlInlineContent closes on any tag
   WITHOUT the inline flag); phrasing elements must say "-flow inline"
   or they break out of paragraphs.
+
+## Flexbox stage A (htmlflexlayout.c)
+
+The header comment of htmlflexlayout.c lists the stage-A
+approximations; what belongs here is the wiring, which lives in THREE
+dispatch points that must stay consistent:
+
+* **normalFlowLayoutNode()**: `display:flex` gets the FT_FLEX flow
+  type (normalFlowLayoutFlex - table-like independent formatting
+  context, but auto width FILLS the containing block like a normal
+  block); `inline-flex` rides the existing FT_INLINE_BLOCK branch.
+* **HtmlLayoutNodeContent()**: both flex and inline-flex dispatch to
+  HtmlFlexLayout(). This is also how floats, table cells,
+  inline-blocks and overflow boxes reach the flex engine - no other
+  code needs to know about it.
+* **The decline protocol**: HtmlFlexLayout() returns non-zero if the
+  container has no ELEMENT children, having drawn nothing;
+  HtmlLayoutNodeContent then falls through to normal flow. That is
+  what keeps `<div style="display:flex">plain text</div>` rendering
+  its text without anonymous-item machinery.
+
+Traps discovered while building it:
+
+* **The 10000px trap**: blockMinMaxWidth() probes run the normal
+  layout at iContaining=0/10000. If the flex engine simply laid out
+  under those widths, any item with flex-grow would inflate the
+  "max-content" answer to 10000px and every shrink-to-fit ancestor
+  (floats, inline-blocks, table cells) would explode. Hence the
+  dedicated minmaxTest branch that sums item intrinsics and returns
+  BEFORE any drawing (HtmlLayoutNodeContent asserts the canvas is
+  empty under minmaxTest).
+* In that intrinsic branch, a definite width/flex-basis must override
+  the content measure, or `inline-flex` around fixed-width items
+  shrink-wraps to the text width. Resolving PIXELVAL with a
+  percent-of of PIXELVAL_AUTO conveniently turns percentages into
+  "auto".
+* **-reverse is not just item order**: the main axis flips, so
+  justify-content's flex-start packs at the right/bottom edge. The
+  implementation iterates items reversed AND swaps start/end before
+  computing justify offsets; forget the second half and row-reverse
+  packs on the wrong side.
+* Items are drawn exactly like table cells: HtmlLayoutDrawBox() for
+  the border-box (which is how stretch works - the box is simply
+  drawn taller than the content), then DRAW_CANVAS of the content at
+  the padding origin.
+* The §9.7 loop distributes free space with a running remainder
+  (share = remaining_free * weight / remaining_weight) so integer
+  shares sum exactly; per-item violations are stored and only the
+  matching sign is frozen each round.
 
 ## Test-design traps discovered while testing all this
 

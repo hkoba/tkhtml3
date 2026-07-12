@@ -35,6 +35,13 @@
 #                 mixed relative units invalidate the declaration (the
 #                 cascade falls back).
 #
+#     modern-11.* Flexbox stage A (single-line): grow/shrink/basis
+#                 resolution, justify-content, gap, column direction,
+#                 auto margins, align-items, order, max-width freezing,
+#                 stretch, inline-flex shrink-to-fit, the text-only
+#                 fallback. All geometry uses fixed pixel sizes, so
+#                 the assertions are font-independent.
+#
 # Note: when testing with properties, prefer 'color' - the initial value
 # of e.g. 'border-top-width' is "medium" (2px), which is easy to confuse
 # with a test value.
@@ -636,5 +643,194 @@ tcltest::test modern-10.2 {var() inside calc} -body {
   .h parse -final {<body><div id="j">x</div></body>}
   property [idnode j] width
 } -result {32px}
+
+#--------------------------------------------------------------------------
+# modern-11.*: flexbox stage A.
+#
+proc flexpage {css html} {
+  .h reset
+  .h style "body { margin: 0; padding: 0 } $css"
+  .h parse -final "<body>$html</body>"
+  update idletasks
+}
+proc xw {node} {
+  # bbox -> {x width}
+  foreach {x1 y1 x2 y2} [.h bbox $node] break
+  list $x1 [expr {$x2 - $x1}]
+}
+proc yh {node} {
+  # bbox -> {y height}
+  foreach {x1 y1 x2 y2} [.h bbox $node] break
+  list $y1 [expr {$y2 - $y1}]
+}
+
+tcltest::test modern-11.0 {flex shorthand readback} -body {
+  .h reset
+  .h style {
+    #a { flex: 1 0 0% }
+    #b { flex: none }
+    #c { flex: 2 }
+    #d { flex: 30% }
+  }
+  .h parse -final {<body><div id="a">a</div><div id="b">b</div>
+    <div id="c">c</div><div id="d">d</div></body>}
+  set res {}
+  foreach id {a b c d} {
+    set n [idnode $id]
+    lappend res [property $n flex-grow] [property $n flex-shrink] \
+        [property $n flex-basis]
+  }
+  set res
+} -result {1 0 0.0% 0 0 auto 2 1 0px 1 1 30.0%}
+
+tcltest::test modern-11.1 {equal flex-grow split} -body {
+  flexpage {
+    #f { display: flex; width: 600px }
+    #f > div { flex: 1 0 0% }
+  } {<div id="f"><div id="a">a</div><div id="b">b</div><div id="c">c</div></div>}
+  list [xw [idnode a]] [xw [idnode b]] [xw [idnode c]]
+} -result {{0 200} {200 200} {400 200}}
+
+tcltest::test modern-11.2 {justify-content space-between} -body {
+  flexpage {
+    #f { display: flex; width: 600px; justify-content: space-between }
+    #f > div { width: 100px }
+  } {<div id="f"><div id="a">a</div><div id="b">b</div><div id="c">c</div></div>}
+  list [xw [idnode a]] [xw [idnode b]] [xw [idnode c]]
+} -result {{0 100} {250 100} {500 100}}
+
+tcltest::test modern-11.3 {justify-content center} -body {
+  flexpage {
+    #f { display: flex; width: 600px; justify-content: center }
+    #f > div { width: 100px }
+  } {<div id="f"><div id="a">a</div><div id="b">b</div></div>}
+  list [xw [idnode a]] [xw [idnode b]]
+} -result {{200 100} {300 100}}
+
+tcltest::test modern-11.4 {gap between items} -body {
+  flexpage {
+    #f { display: flex; width: 600px; gap: 30px }
+    #f > div { flex: 1 0 0% }
+  } {<div id="f"><div id="a">a</div><div id="b">b</div></div>}
+  list [xw [idnode a]] [xw [idnode b]]
+} -result {{0 285} {315 285}}
+
+tcltest::test modern-11.5 {column direction with definite height} -body {
+  flexpage {
+    #f { display: flex; flex-direction: column; width: 600px; height: 300px }
+    #f > div { flex: 1 0 0% }
+  } {<div id="f"><div id="a">a</div><div id="b">b</div><div id="c">c</div></div>}
+  list [yh [idnode a]] [yh [idnode b]] [yh [idnode c]]
+} -result {{0 100} {100 100} {200 100}}
+
+tcltest::test modern-11.6 {auto main margin absorbs free space} -body {
+  flexpage {
+    #f { display: flex; width: 600px }
+    #f > div { flex: 0 0 150px }
+    #b { margin-left: auto }
+  } {<div id="f"><div id="a">a</div><div id="b">b</div></div>}
+  list [xw [idnode a]] [xw [idnode b]]
+} -result {{0 150} {450 150}}
+
+tcltest::test modern-11.7 {align-items center} -body {
+  flexpage {
+    #f { display: flex; width: 600px; height: 90px; align-items: center }
+    #a { height: 80px; width: 50px }
+    #b { height: 20px; width: 50px }
+  } {<div id="f"><div id="a"></div><div id="b"></div></div>}
+  list [yh [idnode a]] [yh [idnode b]]
+} -result {{5 80} {35 20}}
+
+tcltest::test modern-11.8 {order reorders items} -body {
+  flexpage {
+    #f { display: flex; width: 600px }
+    #f > div { flex: 1 0 0% }
+    #c { order: -1 }
+  } {<div id="f"><div id="a">1</div><div id="b">2</div><div id="c">3</div></div>}
+  list [xw [idnode c]] [xw [idnode a]] [xw [idnode b]]
+} -result {{0 200} {200 200} {400 200}}
+
+tcltest::test modern-11.9 {row-reverse packs at the right edge} -body {
+  # In row-reverse the main axis is flipped: the default
+  # justify-content:flex-start packs items at the RIGHT edge,
+  # with the first item rightmost.
+  flexpage {
+    #f { display: flex; flex-direction: row-reverse; width: 600px }
+    #f > div { flex: 0 0 100px }
+  } {<div id="f"><div id="a">a</div><div id="b">b</div></div>}
+  list [xw [idnode a]] [xw [idnode b]]
+} -result {{500 100} {400 100}}
+
+tcltest::test modern-11.10 {shrink proportional to factor times base} -body {
+  flexpage {
+    #f { display: flex; width: 300px }
+    #a { flex: 0 1 400px; overflow: hidden }
+    #b { flex: 0 1 200px; overflow: hidden }
+  } {<div id="f"><div id="a"></div><div id="b"></div></div>}
+  list [xw [idnode a]] [xw [idnode b]]
+} -result {{0 200} {200 100}}
+
+tcltest::test modern-11.11 {max-width freezes a growing item} -body {
+  flexpage {
+    #f { display: flex; width: 600px }
+    #f > div { flex: 1 0 0% }
+    #b { max-width: 100px }
+  } {<div id="f"><div id="a">a</div><div id="b">b</div><div id="c">c</div></div>}
+  list [xw [idnode a]] [xw [idnode b]] [xw [idnode c]]
+} -result {{0 250} {250 100} {350 250}}
+
+tcltest::test modern-11.12 {align-items stretch is the default} -body {
+  flexpage {
+    #f { display: flex; width: 600px; height: 120px }
+    #a { width: 100px }
+  } {<div id="f"><div id="a"></div></div>}
+  yh [idnode a]
+} -result {0 120}
+
+tcltest::test modern-11.13 {inline-flex shrinks to fit} -body {
+  flexpage {
+    #f { display: inline-flex }
+    #f > div { width: 50px; height: 20px }
+  } {<div><div id="f"><div>a</div><div>b</div></div></div>}
+  lindex [xw [idnode f]] 1
+} -result {100}
+
+tcltest::test modern-11.14 {text-only flex container falls back to normal flow} -body {
+  flexpage {
+    #f { display: flex; width: 600px }
+  } {<div id="f">plain text</div>}
+  # The text must still render: the container gets a text height
+  expr {[lindex [yh [idnode f]] 1] > 0}
+} -result {1}
+
+tcltest::test modern-11.15 {nested flex containers} -body {
+  flexpage {
+    #outer { display: flex; width: 600px }
+    #outer > div { flex: 1 0 0% }
+    #inner { display: flex }
+    #inner > div { flex: 1 0 0% }
+  } {<div id="outer"><div>x</div><div id="inner"><div id="a">a</div><div id="b">b</div></div></div>}
+  list [xw [idnode a]] [xw [idnode b]]
+} -result {{300 150} {450 150}}
+
+tcltest::test modern-11.16 {percentage flex-basis} -body {
+  flexpage {
+    #f { display: flex; width: 600px }
+    #a { flex: 0 0 25% }
+    #b { flex: 1 0 0% }
+  } {<div id="f"><div id="a">a</div><div id="b">b</div></div>}
+  list [xw [idnode a]] [xw [idnode b]]
+} -result {{0 150} {150 450}}
+
+tcltest::test modern-11.17 {box-sizing border-box on flex items} -body {
+  flexpage {
+    #f { display: flex; width: 600px }
+    #f > div { flex: 0 0 200px; box-sizing: border-box;
+               padding: 0 20px; border: 5px solid black }
+  } {<div id="f"><div id="a">a</div><div id="b">b</div></div>}
+  # border-box: the 200px basis includes padding+border, so the
+  # border boxes are exactly 200px wide and adjacent
+  list [xw [idnode a]] [xw [idnode b]]
+} -result {{0 200} {200 200}}
 
 finish_test

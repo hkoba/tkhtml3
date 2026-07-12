@@ -1,0 +1,192 @@
+# Test script for Tkhtml
+#
+# Bootstrap 5 grid system rendered with the REAL, unmodified Bootstrap
+# 5.3.3 stylesheet (tests/bootstrap5/css/bootstrap.css, 281 KB). This
+# is the acceptance suite for flexbox stage A (agent_docs/roadmap.md
+# Tier 3): the grid exercises custom properties, calc(), rem, media
+# queries and the flex layout engine all at once.
+#
+# All assertions are RELATIVE (equal widths, ratios, alignment against
+# the row edges) so they do not depend on the fonts installed on the
+# machine - only the widget width, which is forced with [wm geometry].
+#
+# Known stage-A limitations, deliberately NOT tested here: multi-line
+# rows (columns summing past 12) and below-breakpoint stacking of
+# .col-md-* both require flex-wrap (stage B).
+#
+proc sourcefile {file} {
+  set fname [file join [file dirname [info script]] $file]
+  uplevel #0 [list source $fname]
+}
+sourcefile common.tcl
+
+catch {destroy .h}
+
+# Force a deterministic viewport: 820px wide puts the document in the
+# "md" (>=768px) breakpoint range.
+wm geometry . 820x600
+html .h -width 820 -height 600
+pack .h -fill both -expand 1
+update
+
+set fd [open [file join [file dirname [info script]] bootstrap5 css bootstrap.css]]
+set ::B5CSS [read $fd]
+close $fd
+
+proc b5page {html} {
+  .h reset
+  .h style $::B5CSS
+  .h parse -final "<body><div class=\"container-fluid\">$html</div></body>"
+  update idletasks
+}
+proc idnode {id} {
+  lindex [.h search "\[id=\"$id\"\]"] 0
+}
+proc bbox {id} {
+  .h bbox [idnode $id]
+}
+proc width {id} {
+  foreach {x1 y1 x2 y2} [bbox $id] break
+  expr {$x2 - $x1}
+}
+proc near {a b {tol 2}} {
+  expr {abs($a - $b) <= $tol}
+}
+
+tcltest::test bootstrap5-1.0 {three .col split a row equally} -body {
+  b5page {
+    <div class="row" id="r">
+      <div class="col" id="a">A</div>
+      <div class="col" id="b">B</div>
+      <div class="col" id="c">C</div>
+    </div>
+  }
+  foreach {rx1 ry1 rx2 ry2} [bbox r] break
+  foreach {ax1 ay1 ax2 ay2} [bbox a] break
+  foreach {bx1 by1 bx2 by2} [bbox b] break
+  foreach {cx1 cy1 cx2 cy2} [bbox c] break
+  list [near [width a] [width b]] [near [width b] [width c]] \
+       [expr {$ax1 == $rx1}] [near $cx2 $rx2] \
+       [expr {$ax2 == $bx1 && $bx2 == $cx1}] \
+       [expr {$ay1 == $by1 && $by1 == $cy1}]
+} -result {1 1 1 1 1 1}
+
+tcltest::test bootstrap5-1.1 {col-4 / col-8 split 1:2} -body {
+  b5page {
+    <div class="row" id="r">
+      <div class="col-4" id="a">A</div>
+      <div class="col-8" id="b">B</div>
+    </div>
+  }
+  list [near [width b] [expr {2 * [width a]}] 4] \
+       [near [expr {[width a] + [width b]}] [width r] 4]
+} -result {1 1}
+
+tcltest::test bootstrap5-1.2 {two col-6 fill the row side by side} -body {
+  b5page {
+    <div class="row" id="r">
+      <div class="col-6" id="a">A</div>
+      <div class="col-6" id="b">B</div>
+    </div>
+  }
+  foreach {ax1 ay1 ax2 ay2} [bbox a] break
+  foreach {bx1 by1 bx2 by2} [bbox b] break
+  list [near [width a] [width b]] [expr {$ax2 == $bx1}] \
+       [expr {$ay1 == $by1}] \
+       [near [expr {[width a] + [width b]}] [width r] 4]
+} -result {1 1 1 1}
+
+tcltest::test bootstrap5-1.3 {col-12 spans the full row} -body {
+  b5page {
+    <div class="row" id="r"><div class="col-12" id="a">A</div></div>
+  }
+  near [width a] [width r] 2
+} -result {1}
+
+tcltest::test bootstrap5-1.4 {four col-3 in one line} -body {
+  b5page {
+    <div class="row" id="r">
+      <div class="col-3" id="a">A</div><div class="col-3" id="b">B</div>
+      <div class="col-3" id="c">C</div><div class="col-3" id="d">D</div>
+    </div>
+  }
+  foreach {ax1 ay1 ax2 ay2} [bbox a] break
+  foreach {dx1 dy1 dx2 dy2} [bbox d] break
+  foreach {rx1 ry1 rx2 ry2} [bbox r] break
+  list [near [width a] [width d]] [expr {$ay1 == $dy1}] [near $dx2 $rx2]
+} -result {1 1 1}
+
+tcltest::test bootstrap5-1.5 {.col fills the space next to a col-6} -body {
+  b5page {
+    <div class="row" id="r">
+      <div class="col-6" id="a">A</div>
+      <div class="col" id="b">B</div>
+    </div>
+  }
+  list [near [width a] [width b] 4] \
+       [near [expr {[width a] + [width b]}] [width r] 4]
+} -result {1 1}
+
+tcltest::test bootstrap5-2.0 {justify-content-center centers a lone column} -body {
+  b5page {
+    <div class="row justify-content-center" id="r">
+      <div class="col-4" id="a">A</div>
+    </div>
+  }
+  foreach {rx1 ry1 rx2 ry2} [bbox r] break
+  foreach {ax1 ay1 ax2 ay2} [bbox a] break
+  # equal space on both sides
+  near [expr {$ax1 - $rx1}] [expr {$rx2 - $ax2}] 2
+} -result {1}
+
+tcltest::test bootstrap5-2.1 {justify-content-between pushes columns apart} -body {
+  b5page {
+    <div class="row justify-content-between" id="r">
+      <div class="col-3" id="a">A</div>
+      <div class="col-3" id="b">B</div>
+    </div>
+  }
+  foreach {rx1 ry1 rx2 ry2} [bbox r] break
+  foreach {ax1 ay1 ax2 ay2} [bbox a] break
+  foreach {bx1 by1 bx2 by2} [bbox b] break
+  list [expr {$ax1 == $rx1}] [near $bx2 $rx2]
+} -result {1 1}
+
+tcltest::test bootstrap5-2.2 {.ms-auto pushes a column to the right edge} -body {
+  b5page {
+    <div class="row" id="r">
+      <div class="col-3" id="a">A</div>
+      <div class="col-3 ms-auto" id="b">B</div>
+    </div>
+  }
+  foreach {rx1 ry1 rx2 ry2} [bbox r] break
+  foreach {bx1 by1 bx2 by2} [bbox b] break
+  near $bx2 $rx2
+} -result {1}
+
+tcltest::test bootstrap5-3.0 {col-md-6 columns are active at 820px} -body {
+  b5page {
+    <div class="row" id="r">
+      <div class="col-md-6" id="a">A</div>
+      <div class="col-md-6" id="b">B</div>
+    </div>
+  }
+  foreach {ax1 ay1 ax2 ay2} [bbox a] break
+  foreach {bx1 by1 bx2 by2} [bbox b] break
+  list [near [width a] [width b]] [expr {$ax2 == $bx1}] [expr {$ay1 == $by1}]
+} -result {1 1 1}
+
+tcltest::test bootstrap5-3.1 {rows stack vertically} -body {
+  b5page {
+    <div class="row" id="r1"><div class="col" id="a">A</div></div>
+    <div class="row" id="r2"><div class="col" id="b">B</div></div>
+  }
+  foreach {x1 ay1 x2 ay2} [bbox r1] break
+  foreach {x3 by1 x4 by2} [bbox r2] break
+  expr {$by1 >= $ay2}
+} -result {1}
+
+# Restore the natural toplevel size for any suite run after this one.
+wm geometry . {}
+
+finish_test
