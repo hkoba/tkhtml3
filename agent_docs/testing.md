@@ -72,6 +72,24 @@ Two Acid2 traits that look like bugs but are by design:
 5. Reduce into a ~20-line `.tcl` file under the same harness before
    touching C. Every real bug found in 2026 reproduced in <30 lines.
 
+## Test-design traps (each cost a debugging round)
+
+* **border-*-width's initial value is "medium" = 2px**, not 0. A test
+  that assigns 2px to a rule cannot tell "rule matched" from "nothing
+  matched". Prefer 'color'/'background-color' for match assertions.
+* **'color' inherits** - a test that colors an ancestor (e.g. :root)
+  paints every descendant too; use background-color to test where a
+  rule *applies*.
+* **Resize-dependent features** (conditional @media, vw/vh) under
+  tcltest: force the size with `wm geometry . 400x300; update`; after
+  a resize, give the ConfigureNotify restyle a beat
+  (`after 200 {set ::x 1}; vwait ::x; update`); restore with
+  `wm geometry . {}` for later tests.
+* **Font-independent layout assertions**: express heights as
+  multiples of a measured one-line reference box and widths as
+  inequalities (see modern-5.*) - absolute pixel heights of text
+  depend on the fonts installed on the CI machine.
+
 ## Version-skew trap
 
 A system-installed Tkhtml (e.g. the RPM) silently shadows your build:

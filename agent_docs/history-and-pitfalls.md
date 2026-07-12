@@ -43,6 +43,17 @@ written *before* deliberate behavior changes. Decoder ring:
 If an old test fails, check `git log -S` for a deliberate change
 before "fixing" the engine to match the test.
 
+## The function-token truncation bug (latent since the fossil era)
+
+The hand-written tokenizer folds "name(...)" into a single CT_FUNCTION
+token by scanning a sub-input for the closing ')'. Until b00b27a it
+stopped at the FIRST ')' - harmless for the historic functions (url,
+attr, rgb...), but it silently truncated any nested parentheses:
+"calc((a + b) * 2)" or a var() fallback containing a function ended
+mid-token and the declaration turned to garbage. Fixed by counting
+CT_LRP/CT_RRP nesting. If a functional value ever "loses its tail"
+again, suspect tokenization before blaming the value parser.
+
 ## The gradient-as-URL bug pattern (generalizable)
 
 `background-image: linear-gradient(...)` used to be accepted: unknown
