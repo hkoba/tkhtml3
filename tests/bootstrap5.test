@@ -10,9 +10,9 @@
 # the row edges) so they do not depend on the fonts installed on the
 # machine - only the widget width, which is forced with [wm geometry].
 #
-# Known stage-A limitations, deliberately NOT tested here: multi-line
-# rows (columns summing past 12) and below-breakpoint stacking of
-# .col-md-* both require flex-wrap (stage B).
+# The bootstrap5-4.* cases cover the multi-line behaviours added by
+# flex-wrap (stage B): rows whose columns sum past 12 wrap onto new
+# lines, and .col-md-* columns stack below their breakpoint.
 #
 proc sourcefile {file} {
   set fname [file join [file dirname [info script]] $file]
@@ -185,6 +185,50 @@ tcltest::test bootstrap5-3.1 {rows stack vertically} -body {
   foreach {x3 by1 x4 by2} [bbox r2] break
   expr {$by1 >= $ay2}
 } -result {1}
+
+tcltest::test bootstrap5-4.0 {columns summing past 12 wrap onto a new line} -body {
+  b5page {
+    <div class="row" id="r">
+      <div class="col-6" id="a">A</div>
+      <div class="col-6" id="b">B</div>
+      <div class="col-6" id="c">C</div>
+    </div>
+  }
+  foreach {ax1 ay1 ax2 ay2} [bbox a] break
+  foreach {bx1 by1 bx2 by2} [bbox b] break
+  foreach {cx1 cy1 cx2 cy2} [bbox c] break
+  # a and b share the first line; c starts a second line below,
+  # left-aligned with a
+  list [expr {$ay1 == $by1}] [expr {$cy1 >= $ay2}] [expr {$cx1 == $ax1}] \
+       [near [width c] [width a]]
+} -result {1 1 1 1}
+
+tcltest::test bootstrap5-4.1 {col-md-6 stacks below the md breakpoint} -body {
+  # Shrink the viewport under 768px: the col-md-6 width rule no longer
+  # applies, .row > * { width: 100% } takes over and each column
+  # becomes its own flex line (a restyle runs on resize because the
+  # stylesheet has conditional @media rules).
+  wm geometry . 500x600
+  update
+  after 200 {set ::b5resize 1}; vwait ::b5resize
+  update
+  b5page {
+    <div class="row" id="r">
+      <div class="col-md-6" id="a">A</div>
+      <div class="col-md-6" id="b">B</div>
+    </div>
+  }
+  foreach {ax1 ay1 ax2 ay2} [bbox a] break
+  foreach {bx1 by1 bx2 by2} [bbox b] break
+  set res [list [expr {$by1 >= $ay2}] [near [width a] [width b]] \
+      [near [width a] [width r] 4]]
+  # Restore the md-range viewport for any case added after this one
+  wm geometry . 820x600
+  update
+  after 200 {set ::b5resize2 1}; vwait ::b5resize2
+  update
+  set res
+} -result {1 1 1}
 
 # Restore the natural toplevel size for any suite run after this one.
 wm geometry . {}

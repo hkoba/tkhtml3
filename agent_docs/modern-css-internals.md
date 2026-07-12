@@ -219,6 +219,35 @@ Traps discovered while building it:
   shares sum exactly; per-item violations are stored and only the
   matching sign is frozen each round.
 
+Stage B (multi-line) additions:
+
+* Lines are a partition of the (order-sorted) item array - each
+  FlexLine is (iFirst, nItem) into aItem[], broken greedily on
+  hypothetical sizes. The 9.7 resolution, auto-margin, and
+  justify-content passes all run PER LINE on the subarray.
+* Wrapping needs a definite main size; a wrap column with auto
+  height stays single-line (browsers effectively do the same).
+* **wrap-reverse flips the cross axis**, not just the line order:
+  lines are stacked in reverse order AND align-content's
+  start/end are swapped (first line ends up at the bottom edge
+  under the default packing). Within-line item alignment
+  (align-items) is NOT flipped - a documented approximation.
+* align-content: stretch grows the LINES (items with definite
+  cross sizes keep them and sit at their line's start); the other
+  values reuse flexJustify() over lines. In a nowrap container
+  align-content is ignored and the single line fills a definite
+  cross size, as in stage A.
+* Baseline alignment (row only): the item ascent =
+  margin_top + border_top + HtmlDrawFindLinebox() y of the item's
+  content canvas - i.e. the FIRST line box, which is what flexbox
+  wants (inline-block wants the LAST; it computes its own). Items
+  with no line box synthesize the baseline from the border-box
+  bottom. Line cross size accounts for max-ascent + max-descent.
+* A wrapping row's min-content width is the widest single ITEM
+  (it can break between any two), not the sum - the intrinsic
+  probe branch switches formula on eFlexWrap. This is what makes
+  .col-md-* stacking work inside shrink-to-fit ancestors.
+
 ## Test-design traps discovered while testing all this
 
 (also see testing.md)

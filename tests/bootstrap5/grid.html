@@ -65,11 +65,12 @@ h2 { margin-top: 1rem }
     <div class="col-md-6"><div class="demo">col-md-6</div></div>
   </div>
 
-  <h2>Known stage-A limitation</h2>
-  <p>Rows whose columns sum past 12 overflow to the right instead of
-  wrapping, and .col-md-* columns below their breakpoint overflow
-  instead of stacking (both need flex-wrap, which is stage B - see
-  agent_docs/roadmap.md).</p>
+  <h2>Wrapping (columns summing past 12)</h2>
+  <div class="row">
+    <div class="col-6"><div class="demo">col-6</div></div>
+    <div class="col-6"><div class="demo">col-6</div></div>
+    <div class="col-6"><div class="demo">col-6 (wraps to a new line)</div></div>
+  </div>
 </div>
 </body>
 </html>

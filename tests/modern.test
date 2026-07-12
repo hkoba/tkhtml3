@@ -42,6 +42,12 @@
 #                 fallback. All geometry uses fixed pixel sizes, so
 #                 the assertions are font-independent.
 #
+#     modern-12.* Flexbox stage B (multi-line): flex-wrap partitioning,
+#                 align-content (stretch/center/space-between),
+#                 wrap-reverse (lines stack from the cross-end),
+#                 two-axis gap, column wrapping, baseline alignment,
+#                 the flex-flow shorthand.
+#
 # Note: when testing with properties, prefer 'color' - the initial value
 # of e.g. 'border-top-width' is "medium" (2px), which is easy to confuse
 # with a test value.
@@ -832,5 +838,124 @@ tcltest::test modern-11.17 {box-sizing border-box on flex items} -body {
   # border boxes are exactly 200px wide and adjacent
   list [xw [idnode a]] [xw [idnode b]]
 } -result {{0 200} {200 200}}
+
+#--------------------------------------------------------------------------
+# modern-12.*: flexbox stage B (multi-line).
+#
+proc relbox {id base} {
+  # bbox of $id relative to the top-left corner of $base
+  foreach {x1 y1 x2 y2} [.h bbox [idnode $id]] break
+  foreach {bx1 by1 bx2 by2} [.h bbox [idnode $base]] break
+  list [expr {$x1-$bx1}] [expr {$y1-$by1}] \
+       [expr {$x2-$bx1}] [expr {$y2-$by1}]
+}
+
+tcltest::test modern-12.0 {flex-wrap breaks lines greedily} -body {
+  flexpage {
+    #f { display: flex; flex-wrap: wrap; width: 600px }
+    #f > div { flex: 0 0 250px; height: 20px }
+  } {<div id="f"><div id="a">a</div><div id="b">b</div><div id="c">c</div></div>}
+  list [relbox a f] [relbox b f] [relbox c f]
+} -result {{0 0 250 20} {250 0 500 20} {0 20 250 40}}
+
+tcltest::test modern-12.1 {align-content space-between} -body {
+  flexpage {
+    #f { display: flex; flex-wrap: wrap; width: 600px; height: 200px;
+         align-content: space-between }
+    #f > div { flex: 0 0 400px; height: 30px }
+  } {<div id="f"><div id="a">a</div><div id="b">b</div></div>}
+  list [relbox a f] [relbox b f]
+} -result {{0 0 400 30} {0 170 400 200}}
+
+tcltest::test modern-12.2 {align-content center} -body {
+  flexpage {
+    #f { display: flex; flex-wrap: wrap; width: 600px; height: 100px;
+         align-content: center }
+    #f > div { flex: 0 0 400px; height: 20px }
+  } {<div id="f"><div id="a">a</div><div id="b">b</div></div>}
+  list [relbox a f] [relbox b f]
+} -result {{0 30 400 50} {0 50 400 70}}
+
+tcltest::test modern-12.3 {align-content stretch grows the lines} -body {
+  # Two 20px-tall items with definite heights on two lines in a 100px
+  # container: each LINE stretches to 50px, the items keep their
+  # height and sit at their line's start.
+  flexpage {
+    #f { display: flex; flex-wrap: wrap; width: 600px; height: 100px }
+    #f > div { flex: 0 0 400px; height: 20px }
+  } {<div id="f"><div id="a">a</div><div id="b">b</div></div>}
+  list [relbox a f] [relbox b f]
+} -result {{0 0 400 20} {0 50 400 70}}
+
+tcltest::test modern-12.4 {wrap-reverse stacks lines from the cross end} -body {
+  # Cross axis flips: with align-content flex-start the FIRST line is
+  # packed at the BOTTOM edge, later lines above it.
+  flexpage {
+    #f { display: flex; flex-wrap: wrap-reverse; width: 600px;
+         height: 100px; align-content: flex-start }
+    #f > div { flex: 0 0 400px; height: 20px }
+  } {<div id="f"><div id="a">a</div><div id="b">b</div></div>}
+  list [relbox a f] [relbox b f]
+} -result {{0 80 400 100} {0 60 400 80}}
+
+tcltest::test modern-12.5 {two-axis gap with wrapping} -body {
+  flexpage {
+    #f { display: flex; flex-wrap: wrap; width: 600px; gap: 10px 20px }
+    #f > div { flex: 0 0 280px; height: 20px }
+  } {<div id="f"><div id="a">a</div><div id="b">b</div><div id="c">c</div></div>}
+  # column-gap 20 between items, row-gap 10 between lines
+  list [relbox a f] [relbox b f] [relbox c f]
+} -result {{0 0 280 20} {300 0 580 20} {0 30 280 50}}
+
+tcltest::test modern-12.6 {column wrapping stacks lines horizontally} -body {
+  flexpage {
+    #f { display: flex; flex-direction: column; flex-wrap: wrap;
+         width: 600px; height: 100px; align-content: flex-start }
+    #f > div { flex: 0 0 60px; width: 100px }
+  } {<div id="f"><div id="a">a</div><div id="b">b</div><div id="c">c</div></div>}
+  # 60+60 > 100: one item per line; lines side by side, 100px wide
+  list [relbox a f] [relbox b f] [relbox c f]
+} -result {{0 0 100 60} {100 0 200 60} {200 0 300 60}}
+
+tcltest::test modern-12.7 {baseline alignment} -body {
+  # The 30px-font item has the larger ascent, so the 10px-font item is
+  # pushed down until the baselines meet. Exact offsets depend on the
+  # font, so only the ordering is asserted.
+  flexpage {
+    #f { display: flex; align-items: baseline; width: 600px }
+    #big { font-size: 30px } #small { font-size: 10px }
+  } {<div id="f"><div id="big">Big</div><div id="small">tiny</div></div>}
+  foreach {x1 bigy x2 y2} [relbox big f] break
+  foreach {x3 smally x4 y4} [relbox small f] break
+  list [expr {$bigy == 0}] [expr {$smally > 0}]
+} -result {1 1}
+
+tcltest::test modern-12.8 {flex-flow shorthand readback} -body {
+  .h reset
+  .h style {
+    #a { flex-flow: column wrap }
+    #b { flex-flow: wrap-reverse }
+    #c { flex-flow: row-reverse }
+  }
+  .h parse -final {<body><div id="a">a</div><div id="b">b</div>
+    <div id="c">c</div></body>}
+  set res {}
+  foreach id {a b c} {
+    set n [idnode $id]
+    lappend res [property $n flex-direction] [property $n flex-wrap]
+  }
+  set res
+} -result {column wrap row wrap-reverse row-reverse nowrap}
+
+tcltest::test modern-12.9 {nowrap is unaffected by align-content} -body {
+  # A single-line container ignores align-content: the line fills the
+  # definite height and stretch items fill the line (same as stage A).
+  flexpage {
+    #f { display: flex; width: 600px; height: 120px;
+         align-content: flex-end }
+    #a { width: 100px }
+  } {<div id="f"><div id="a"></div></div>}
+  relbox a f
+} -result {0 0 100 120}
 
 finish_test

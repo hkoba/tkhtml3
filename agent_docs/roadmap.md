@@ -152,14 +152,19 @@ query + viewport-unit restyles share one ConfigureNotify hook.
   pattern (HtmlLayoutDrawBox + DRAW_CANVAS). Stage-A approximations
   are listed in the header comment of htmlflexlayout.c. Tests:
   modern-11.* (18 geometry cases) + tests/bootstrap5.test.
-* **Stage B — multi-line** [M: 400–800] — `flex-wrap`,
-  `align-content`, per-line cross sizing, baseline alignment (hook
-  the existing inline baseline machinery). Also fixes the two known
-  Bootstrap-grid gaps: columns summing past 12, and below-breakpoint
-  stacking of `.col-md-*`.
+* **Stage B — multi-line** — **DONE (2026-07-13)**: `flex-wrap`
+  (wrap/wrap-reverse; greedy line breaking on hypothetical sizes,
+  per-line 9.7 resolution), `align-content` (7 values; stretch grows
+  the lines), two-axis `gap` (cross gap between lines), column
+  wrapping (lines stack horizontally), baseline alignment via
+  HtmlDrawFindLinebox() (first line box; border-box-bottom synthesis
+  when absent), `flex-flow` shorthand. This closed the two known
+  Bootstrap-grid gaps: columns summing past 12 now wrap, and
+  `.col-md-*` stacks below its breakpoint. Tests: modern-12.* +
+  bootstrap5-4.*.
 * **Acceptance**: **MET** — Bootstrap 5's grid system renders
   correctly with the real, unmodified 5.3.3 stylesheet:
-  tests/bootstrap5.test (11 font-independent relative-geometry cases,
+  tests/bootstrap5.test (13 font-independent relative-geometry cases,
   wired into tests/all.tcl) + the eyeball page
   tests/bootstrap5/grid.html for tests/snapshot.tcl.
 

@@ -58,9 +58,27 @@ struct FlexItem {
 
     int iMarginMainA;        /* Used main-axis margin (left/top) */
     int iMarginMainB;        /* Used main-axis margin (right/bottom) */
+    int iMainExtra;          /* Main-axis margins + border + padding */
 
     BoxContext content;      /* Laid-out content (origin 0,0) */
     int iCross;              /* Used cross size of the content box */
+
+    int isBaseline;          /* Aligned to the line's baseline (row) */
+    int iAscent;             /* Margin edge -> baseline (row only) */
+};
+
+/*
+ * One flex line (multi-line containers have several when
+ * flex-wrap is wrap or wrap-reverse). Items are contiguous in the
+ * item array: aItem[iFirst .. iFirst+nItem-1].
+ */
+typedef struct FlexLine FlexLine;
+struct FlexLine {
+    int iFirst;              /* Index of the line's first item */
+    int nItem;               /* Number of items on the line */
+    int iCross;              /* Cross size of the line */
+    int iCrossOff;           /* Cross offset of the line's start edge */
+    int iBaseline;           /* Largest baseline ascent (row only) */
 };
 
 #define FLEX_MAX_ITER 32     /* Hard cap on 9.7 resolution loop */
@@ -72,7 +90,9 @@ struct FlexItem {
  *
  *     Resolve the cross-axis alignment for one item: 'align-self'
  *     unless it is "auto", in which case the container's 'align-items'.
- *     'baseline' degrades to flex-start (stage A).
+ *     'baseline' only participates in ROW containers (in a column
+ *     container the baseline is parallel to the main axis; treat it
+ *     as flex-start, like browsers do).
  *
  *---------------------------------------------------------------------------
  */
@@ -82,10 +102,14 @@ itemAlign(pContV, pItemV)
     HtmlComputedValues *pItemV;
 {
     int eAlign = pItemV->eAlignSelf;
+    int isColumn = (
+        pContV->eFlexDirection == CSS_CONST_COLUMN ||
+        pContV->eFlexDirection == CSS_CONST_COLUMN_REVERSE
+    );
     if (eAlign == CSS_CONST_AUTO) {
         eAlign = pContV->eAlignItems;
     }
-    if (eAlign == CSS_CONST_BASELINE) {
+    if (eAlign == CSS_CONST_BASELINE && isColumn) {
         eAlign = CSS_CONST_FLEX_START;
     }
     return eAlign;
@@ -554,21 +578,22 @@ HtmlFlexLayout(pLayout, pBox, pNode)
     HtmlComputedValues *pV = HtmlNodeComputedValues(pNode);
     int isColumn;
     int isReverse;
+    int isWrap;              /* True: multi-line (wrap or wrap-reverse) */
+    int isWrapReverse;
     int iGap;                /* Main-axis gap between adjacent items */
+    int iCrossGap;           /* Cross-axis gap between adjacent lines */
     int nChild = HtmlNodeNumChildren(pNode);
     FlexItem *aItem;
+    FlexLine *aLine;
     int nItem;
-    int ii;
+    int nLine;
+    int ii, ll;
 
     int iMainAvail;          /* Definite main size or PIXELVAL_AUTO */
     int iCrossAvail;         /* Cross-axis size (definite for rows) */
-    int iOuterFixed;         /* Sum of margins+borders+paddings+gaps */
-    int nAutoMargin;         /* Number of auto margins on main axis */
-    int iFree;               /* Free space in the main axis */
-    int iUsedMain;           /* Sum of outer main sizes + gaps */
-    int iLineCross;          /* Cross size of the single flex line */
-    int iLead, iBetween;     /* justify-content offsets */
-    int iCursor;             /* Main-axis layout cursor */
+    int iCrossContainer;     /* Definite cross size or PIXELVAL_AUTO */
+    int iTotalCross;         /* Sum of line cross sizes + cross gaps */
+    int iMainExtent;         /* Largest used main extent of any line */
 
     isColumn = (
         pV->eFlexDirection == CSS_CONST_COLUMN ||
@@ -579,6 +604,7 @@ HtmlFlexLayout(pLayout, pBox, pNode)
         pV->eFlexDirection == CSS_CONST_COLUMN_REVERSE
     );
     iGap = isColumn ? pV->iRowGap : pV->iColumnGap;
+    iCrossGap = isColumn ? pV->iColumnGap : pV->iRowGap;
 
     if (nChild == 0) return 1;
     aItem = (FlexItem *)HtmlClearAlloc(
@@ -593,10 +619,18 @@ HtmlFlexLayout(pLayout, pBox, pNode)
         iMainAvail = pBox->iContainingHeight;
         if (iMainAvail < MAX_PIXELVAL) iMainAvail = PIXELVAL_AUTO;
         iCrossAvail = pBox->iContaining;
+        iCrossContainer = pBox->iContaining;
     } else {
         iMainAvail = pBox->iContaining;
         iCrossAvail = pBox->iContaining;  /* %-margins resolve vs width */
+        iCrossContainer = pBox->iContainingHeight;
+        if (iCrossContainer < MAX_PIXELVAL) iCrossContainer = PIXELVAL_AUTO;
     }
+
+    /* Wrapping requires a definite main size to break lines against */
+    isWrap = (pV->eFlexWrap != CSS_CONST_NOWRAP
+        && iMainAvail != PIXELVAL_AUTO && nItem > 1);
+    isWrapReverse = (isWrap && pV->eFlexWrap == CSS_CONST_WRAP_REVERSE);
 
     /* Margins and border/padding for each item. Percentages in both
      * axes resolve against the containing WIDTH, per CSS. */
@@ -659,6 +693,13 @@ HtmlFlexLayout(pLayout, pBox, pNode)
             iVal += (p->margin.rightAuto ? 0 : p->margin.margin_right);
             if (isColumn) {
                 iTotal = MAX(iTotal, iVal);
+            } else if (
+                pV->eFlexWrap != CSS_CONST_NOWRAP &&
+                pLayout->minmaxTest == MINMAX_TEST_MIN
+            ) {
+                /* A wrapping row can break between any two items, so
+                 * its min-content width is the widest single item. */
+                iTotal = MAX(iTotal, iVal);
             } else {
                 iTotal += iVal;
                 if (ii > 0) iTotal += iGap;
@@ -676,39 +717,72 @@ HtmlFlexLayout(pLayout, pBox, pNode)
             iCrossAvail, pBox->iContainingHeight);
     }
 
-    /* Fixed (non-flexible) main-axis extras */
-    iOuterFixed = (nItem - 1) * iGap;
-    nAutoMargin = 0;
+    /* Per-item main-axis fixed extras (margins + border + padding) */
     for (ii = 0; ii < nItem; ii++) {
         FlexItem *p = &aItem[ii];
-        iOuterFixed += p->iMarginMainA + p->iMarginMainB;
+        p->iMainExtra = p->iMarginMainA + p->iMarginMainB;
         if (isColumn) {
-            iOuterFixed += p->box.iTop + p->box.iBottom;
-            nAutoMargin += (p->margin.topAuto != 0);
-            nAutoMargin += (p->margin.bottomAuto != 0);
+            p->iMainExtra += p->box.iTop + p->box.iBottom;
         } else {
-            iOuterFixed += p->box.iLeft + p->box.iRight;
-            nAutoMargin += (p->margin.leftAuto != 0);
-            nAutoMargin += (p->margin.rightAuto != 0);
+            p->iMainExtra += p->box.iLeft + p->box.iRight;
         }
     }
 
-    /* Resolve flexible lengths (only possible with a definite main
-     * size; an indefinite (auto-height column) container sizes to its
-     * content and nothing grows or shrinks). */
+    /* Partition the items into flex lines. Without wrapping (or with
+     * an indefinite main size) there is a single line holding every
+     * item. With wrapping, break greedily on hypothetical sizes: an
+     * item moves to a new line when it no longer fits (an oversized
+     * item gets a line of its own and shrinks there, if it can). */
+    aLine = (FlexLine *)HtmlClearAlloc(
+        "FlexLine", nItem * sizeof(FlexLine));
+    nLine = 0;
+    if (!isWrap) {
+        aLine[0].iFirst = 0;
+        aLine[0].nItem = nItem;
+        nLine = 1;
+    } else {
+        int iLineUsed = 0;
+        for (ii = 0; ii < nItem; ii++) {
+            FlexItem *p = &aItem[ii];
+            int iOuterHyp = p->iMain + p->iMainExtra;
+            if (nLine == 0 || (
+                aLine[nLine-1].nItem > 0 &&
+                iLineUsed + iGap + iOuterHyp > iMainAvail
+            )) {
+                aLine[nLine].iFirst = ii;
+                aLine[nLine].nItem = 0;
+                nLine++;
+                iLineUsed = 0;
+            }
+            iLineUsed += (aLine[nLine-1].nItem ? iGap : 0) + iOuterHyp;
+            aLine[nLine-1].nItem++;
+        }
+    }
+
+    /* Resolve flexible lengths per line (only possible with a definite
+     * main size; an indefinite (auto-height column) container sizes to
+     * its content and nothing grows or shrinks). */
     if (iMainAvail != PIXELVAL_AUTO) {
-        int iHypSum = iOuterFixed;
-        for (ii = 0; ii < nItem; ii++) iHypSum += aItem[ii].iMain;
-        if (iMainAvail != iHypSum) {
-            flexResolveLengths(aItem, nItem, iMainAvail - iOuterFixed,
-                iMainAvail > iHypSum);
+        for (ll = 0; ll < nLine; ll++) {
+            FlexLine *pLine = &aLine[ll];
+            FlexItem *aLI = &aItem[pLine->iFirst];
+            int iFixed = (pLine->nItem - 1) * iGap;
+            int iHypSum;
+            for (ii = 0; ii < pLine->nItem; ii++) {
+                iFixed += aLI[ii].iMainExtra;
+            }
+            iHypSum = iFixed;
+            for (ii = 0; ii < pLine->nItem; ii++) iHypSum += aLI[ii].iMain;
+            if (iMainAvail != iHypSum) {
+                flexResolveLengths(aLI, pLine->nItem,
+                    iMainAvail - iFixed, iMainAvail > iHypSum);
+            }
         }
     }
 
     /* Lay out each item's content at its resolved main size */
     for (ii = 0; ii < nItem; ii++) {
         FlexItem *p = &aItem[ii];
-        HtmlComputedValues *pIV = HtmlNodeComputedValues(p->pNode);
         BoxContext *pContent = &p->content;
 
         if (isColumn) {
@@ -739,175 +813,286 @@ HtmlFlexLayout(pLayout, pBox, pNode)
         }
     }
 
-    /* The cross size of the (single) flex line */
-    iLineCross = 0;
-    for (ii = 0; ii < nItem; ii++) {
-        FlexItem *p = &aItem[ii];
-        int iOuter = p->iCross;
-        if (isColumn) {
-            iOuter += p->box.iLeft + p->box.iRight
-                + p->margin.margin_left + p->margin.margin_right;
-        } else {
-            iOuter += p->box.iTop + p->box.iBottom
-                + (p->margin.topAuto ? 0 : p->margin.margin_top)
-                + (p->margin.bottomAuto ? 0 : p->margin.margin_bottom);
-        }
-        iLineCross = MAX(iLineCross, iOuter);
-    }
-    if (isColumn) {
-        iLineCross = MAX(iLineCross, iCrossAvail);
-    } else if (
-        pBox->iContainingHeight != PIXELVAL_AUTO &&
-        pBox->iContainingHeight >= MAX_PIXELVAL
-    ) {
-        /* A definite container height: the line fills it (9.4.11) */
-        iLineCross = MAX(iLineCross, pBox->iContainingHeight);
-    }
-
-    /* Stretch pass (row only; column stretching was handled when the
-     * cross width was chosen above) */
+    /* Baseline ascents (row containers only). The ascent runs from
+     * the item's margin edge to the first line box's baseline in its
+     * laid-out content; an item with no line box synthesizes its
+     * baseline from the border box's bottom edge (css-flexbox 8.3). */
     if (!isColumn) {
         for (ii = 0; ii < nItem; ii++) {
             FlexItem *p = &aItem[ii];
             HtmlComputedValues *pIV = HtmlNodeComputedValues(p->pNode);
+            int bx, by;
             if (
-                itemAlign(pV, pIV) == CSS_CONST_STRETCH &&
-                PIXELVAL(pIV, HEIGHT, pBox->iContainingHeight)
-                    == PIXELVAL_AUTO &&
-                !p->margin.topAuto && !p->margin.bottomAuto
+                itemAlign(pV, pIV) != CSS_CONST_BASELINE ||
+                p->margin.topAuto || p->margin.bottomAuto
             ) {
-                int iStretched = iLineCross
-                    - p->box.iTop - p->box.iBottom
-                    - p->margin.margin_top - p->margin.margin_bottom;
-                p->iCross = MAX(p->iCross, iStretched);
-                p->content.height = p->iCross;
+                continue;
+            }
+            p->isBaseline = 1;
+            if (HtmlDrawFindLinebox(&p->content.vc, &bx, &by)) {
+                p->iAscent = p->margin.margin_top + p->box.iTop + by;
+            } else {
+                p->iAscent = p->margin.margin_top + p->box.iTop
+                    + p->iCross + p->box.iBottom;
             }
         }
     }
 
-    /* Main-axis free space, auto margins, justify-content */
-    iUsedMain = iOuterFixed;
-    for (ii = 0; ii < nItem; ii++) iUsedMain += aItem[ii].iMain;
-    if (iMainAvail == PIXELVAL_AUTO) {
-        iFree = 0;
+    /* The cross size and baseline of each line */
+    for (ll = 0; ll < nLine; ll++) {
+        FlexLine *pLine = &aLine[ll];
+        int iCross = 0;
+        int iMaxAscent = 0;
+        int iMaxDescent = 0;
+        for (ii = 0; ii < pLine->nItem; ii++) {
+            FlexItem *p = &aItem[pLine->iFirst + ii];
+            int iOuter = p->iCross;
+            if (isColumn) {
+                iOuter += p->box.iLeft + p->box.iRight
+                    + p->margin.margin_left + p->margin.margin_right;
+            } else {
+                iOuter += p->box.iTop + p->box.iBottom
+                    + (p->margin.topAuto ? 0 : p->margin.margin_top)
+                    + (p->margin.bottomAuto ? 0 : p->margin.margin_bottom);
+            }
+            if (p->isBaseline) {
+                iMaxAscent = MAX(iMaxAscent, p->iAscent);
+                iMaxDescent = MAX(iMaxDescent, iOuter - p->iAscent);
+            } else {
+                iCross = MAX(iCross, iOuter);
+            }
+        }
+        pLine->iCross = MAX(iCross, iMaxAscent + iMaxDescent);
+        pLine->iBaseline = iMaxAscent;
+    }
+
+    /* Cross-axis distribution. A single-line (nowrap) container's
+     * line always fills a definite cross size (9.4.11); a multi-line
+     * container distributes free cross space per 'align-content'
+     * (stretch grows the lines themselves). Lines are then stacked at
+     * iCrossOff offsets, in reverse order for wrap-reverse. */
+    iTotalCross = (nLine - 1) * iCrossGap;
+    for (ll = 0; ll < nLine; ll++) iTotalCross += aLine[ll].iCross;
+
+    if (!isWrap) {
+        if (iCrossContainer != PIXELVAL_AUTO) {
+            aLine[0].iCross = MAX(aLine[0].iCross, iCrossContainer);
+        }
+        aLine[0].iCrossOff = 0;
+        iTotalCross = aLine[0].iCross;
     } else {
-        iFree = iMainAvail - iUsedMain;
+        int iCrossFree = 0;
+        int iLineLead = 0;
+        int iLineBetween = 0;
+        int iOff;
+        if (iCrossContainer != PIXELVAL_AUTO) {
+            iCrossFree = iCrossContainer - iTotalCross;
+        }
+        if (iCrossFree > 0 && pV->eAlignContent == CSS_CONST_STRETCH) {
+            int iPer = iCrossFree / nLine;
+            for (ll = 0; ll < nLine; ll++) aLine[ll].iCross += iPer;
+            aLine[0].iCross += iCrossFree - iPer * nLine;  /* remainder */
+            iTotalCross = iCrossContainer;
+        } else if (iCrossFree != 0) {
+            int eAC = pV->eAlignContent;
+            if (eAC == CSS_CONST_STRETCH) eAC = CSS_CONST_FLEX_START;
+            if (isWrapReverse) {
+                if (eAC == CSS_CONST_FLEX_START) eAC = CSS_CONST_FLEX_END;
+                else if (eAC == CSS_CONST_FLEX_END) eAC=CSS_CONST_FLEX_START;
+            }
+            flexJustify(eAC, iCrossFree, nLine, &iLineLead, &iLineBetween);
+        }
+        iOff = iLineLead;
+        for (ll = 0; ll < nLine; ll++) {
+            /* wrap-reverse stacks the lines in reverse cross order */
+            FlexLine *pLine = &aLine[isWrapReverse ? nLine - 1 - ll : ll];
+            pLine->iCrossOff = iOff;
+            iOff += pLine->iCross + iCrossGap + iLineBetween;
+        }
     }
 
-    iLead = 0;
-    iBetween = 0;
-    if (iFree > 0 && nAutoMargin > 0) {
-        /* Auto main-axis margins absorb all free space (8.1) */
-        int iPer = iFree / nAutoMargin;
-        int iExtra = iFree - iPer * nAutoMargin;  /* First margin gets it */
-        for (ii = 0; ii < nItem; ii++) {
-            FlexItem *p = &aItem[ii];
-            int autoA = isColumn ? p->margin.topAuto : p->margin.leftAuto;
-            int autoB = isColumn ? p->margin.bottomAuto:p->margin.rightAuto;
-            if (autoA) {
-                p->iMarginMainA = iPer + iExtra;
-                iExtra = 0;
-            }
-            if (autoB) {
-                p->iMarginMainB = iPer + iExtra;
-                iExtra = 0;
-            }
-        }
-    } else {
-        /* In a -reverse container the main axis itself is flipped, so
-         * flex-start packs items at the far (right/bottom) edge. The
-         * items are already iterated in reverse order below; flipping
-         * start<->end here completes the axis reversal (the other
-         * justify-content values are symmetric). */
-        int eJustify = pV->eJustifyContent;
-        if (isReverse) {
-            if (eJustify == CSS_CONST_FLEX_START) {
-                eJustify = CSS_CONST_FLEX_END;
-            } else if (eJustify == CSS_CONST_FLEX_END) {
-                eJustify = CSS_CONST_FLEX_START;
+    /* Stretch pass (row only; column stretching was handled when the
+     * cross width was chosen). Items stretch to their own line. */
+    if (!isColumn) {
+        for (ll = 0; ll < nLine; ll++) {
+            FlexLine *pLine = &aLine[ll];
+            for (ii = 0; ii < pLine->nItem; ii++) {
+                FlexItem *p = &aItem[pLine->iFirst + ii];
+                HtmlComputedValues *pIV = HtmlNodeComputedValues(p->pNode);
+                if (
+                    itemAlign(pV, pIV) == CSS_CONST_STRETCH &&
+                    PIXELVAL(pIV, HEIGHT, pBox->iContainingHeight)
+                        == PIXELVAL_AUTO &&
+                    !p->margin.topAuto && !p->margin.bottomAuto
+                ) {
+                    int iStretched = pLine->iCross
+                        - p->box.iTop - p->box.iBottom
+                        - p->margin.margin_top - p->margin.margin_bottom;
+                    p->iCross = MAX(p->iCross, iStretched);
+                    p->content.height = p->iCross;
+                }
             }
         }
-        flexJustify(eJustify, iFree, nItem, &iLead, &iBetween);
     }
 
-    /* Place and draw the items */
-    iCursor = iLead;
-    for (ii = 0; ii < nItem; ii++) {
-        FlexItem *p = isReverse ? &aItem[nItem - 1 - ii] : &aItem[ii];
-        HtmlComputedValues *pIV = HtmlNodeComputedValues(p->pNode);
-        int eAlign = itemAlign(pV, pIV);
-        int iOuterCross;         /* Item cross size incl. box + margins */
-        int iCrossOff;           /* Cross offset of the margin edge */
-        int x1, y1, w1, h1;      /* Border-box rectangle */
+    /* Main-axis free space, auto margins, justify-content and
+     * placement - all per line. */
+    iMainExtent = 0;
+    for (ll = 0; ll < nLine; ll++) {
+        FlexLine *pLine = &aLine[ll];
+        FlexItem *aLI = &aItem[pLine->iFirst];
+        int nLI = pLine->nItem;
+        int iUsedMain = (nLI - 1) * iGap;
+        int nAutoMargin = 0;
+        int iFree;
+        int iLead = 0;
+        int iBetween = 0;
+        int iCursor;
 
-        if (isColumn) {
-            iOuterCross = p->iCross + p->box.iLeft + p->box.iRight
-                + p->margin.margin_left + p->margin.margin_right;
+        for (ii = 0; ii < nLI; ii++) {
+            FlexItem *p = &aLI[ii];
+            iUsedMain += p->iMain + p->iMainExtra;
+            if (isColumn) {
+                nAutoMargin += (p->margin.topAuto != 0);
+                nAutoMargin += (p->margin.bottomAuto != 0);
+            } else {
+                nAutoMargin += (p->margin.leftAuto != 0);
+                nAutoMargin += (p->margin.rightAuto != 0);
+            }
+        }
+        iFree = (iMainAvail == PIXELVAL_AUTO) ? 0 : iMainAvail - iUsedMain;
+
+        if (iFree > 0 && nAutoMargin > 0) {
+            /* Auto main-axis margins absorb all free space (8.1) */
+            int iPer = iFree / nAutoMargin;
+            int iExtra = iFree - iPer * nAutoMargin;
+            for (ii = 0; ii < nLI; ii++) {
+                FlexItem *p = &aLI[ii];
+                int autoA = isColumn ? p->margin.topAuto
+                                     : p->margin.leftAuto;
+                int autoB = isColumn ? p->margin.bottomAuto
+                                     : p->margin.rightAuto;
+                if (autoA) {
+                    p->iMarginMainA = iPer + iExtra;
+                    iExtra = 0;
+                }
+                if (autoB) {
+                    p->iMarginMainB = iPer + iExtra;
+                    iExtra = 0;
+                }
+            }
         } else {
-            iOuterCross = p->iCross + p->box.iTop + p->box.iBottom
-                + p->margin.margin_top + p->margin.margin_bottom;
+            /* In a -reverse container the main axis itself is flipped,
+             * so flex-start packs items at the far (right/bottom)
+             * edge. The items are already iterated in reverse order
+             * below; flipping start<->end here completes the axis
+             * reversal (the other justify-content values are
+             * symmetric). */
+            int eJustify = pV->eJustifyContent;
+            if (isReverse) {
+                if (eJustify == CSS_CONST_FLEX_START) {
+                    eJustify = CSS_CONST_FLEX_END;
+                } else if (eJustify == CSS_CONST_FLEX_END) {
+                    eJustify = CSS_CONST_FLEX_START;
+                }
+            }
+            flexJustify(eJustify, iFree, nLI, &iLead, &iBetween);
         }
 
-        /* Cross-axis alignment. Auto cross margins take precedence:
-         * both auto centers the item, one auto pushes it the other
-         * way (8.1). */
-        {
-            int autoA = isColumn ? p->margin.leftAuto : p->margin.topAuto;
-            int autoB = isColumn ? p->margin.rightAuto:p->margin.bottomAuto;
-            if (autoA && autoB) {
-                iCrossOff = (iLineCross - iOuterCross) / 2;
-            } else if (autoA) {
-                iCrossOff = iLineCross - iOuterCross;
-            } else if (autoB) {
-                iCrossOff = 0;
-            } else switch (eAlign) {
-                case CSS_CONST_CENTER:
-                    iCrossOff = (iLineCross - iOuterCross) / 2;
-                    break;
-                case CSS_CONST_FLEX_END:
-                    iCrossOff = iLineCross - iOuterCross;
-                    break;
-                default:  /* flex-start, stretch */
+        /* Place and draw this line's items */
+        iCursor = iLead;
+        for (ii = 0; ii < nLI; ii++) {
+            FlexItem *p = isReverse ? &aLI[nLI - 1 - ii] : &aLI[ii];
+            HtmlComputedValues *pIV = HtmlNodeComputedValues(p->pNode);
+            int eAlign = itemAlign(pV, pIV);
+            int iOuterCross;     /* Item cross size incl. box + margins */
+            int iCrossOff;       /* Cross offset within the line */
+            int x1, y1, w1, h1;  /* Border-box rectangle */
+
+            if (isColumn) {
+                iOuterCross = p->iCross + p->box.iLeft + p->box.iRight
+                    + p->margin.margin_left + p->margin.margin_right;
+            } else {
+                iOuterCross = p->iCross + p->box.iTop + p->box.iBottom
+                    + p->margin.margin_top + p->margin.margin_bottom;
+            }
+
+            /* Cross-axis alignment. Auto cross margins take
+             * precedence: both auto centers the item, one auto pushes
+             * it the other way (8.1). */
+            {
+                int autoA = isColumn ? p->margin.leftAuto
+                                     : p->margin.topAuto;
+                int autoB = isColumn ? p->margin.rightAuto
+                                     : p->margin.bottomAuto;
+                if (autoA && autoB) {
+                    iCrossOff = (pLine->iCross - iOuterCross) / 2;
+                } else if (autoA) {
+                    iCrossOff = pLine->iCross - iOuterCross;
+                } else if (autoB) {
                     iCrossOff = 0;
-                    break;
+                } else if (p->isBaseline) {
+                    iCrossOff = pLine->iBaseline - p->iAscent;
+                } else switch (eAlign) {
+                    case CSS_CONST_CENTER:
+                        iCrossOff = (pLine->iCross - iOuterCross) / 2;
+                        break;
+                    case CSS_CONST_FLEX_END:
+                        iCrossOff = pLine->iCross - iOuterCross;
+                        break;
+                    default:  /* flex-start, stretch */
+                        iCrossOff = 0;
+                        break;
+                }
             }
-        }
+            iCrossOff += pLine->iCrossOff;
 
+            if (isColumn) {
+                x1 = iCrossOff + p->margin.margin_left;
+                y1 = iCursor + p->iMarginMainA;
+                w1 = p->iCross + p->box.iLeft + p->box.iRight;
+                h1 = p->iMain + p->box.iTop + p->box.iBottom;
+            } else {
+                x1 = iCursor + p->iMarginMainA;
+                y1 = iCrossOff + p->margin.margin_top;
+                w1 = p->iMain + p->box.iLeft + p->box.iRight;
+                h1 = p->iCross + p->box.iTop + p->box.iBottom;
+            }
+
+            HtmlLayoutDrawBox(pLayout->pTree, &pBox->vc,
+                x1, y1, w1, h1, p->pNode, 0, pLayout->minmaxTest);
+            DRAW_CANVAS(&pBox->vc, &p->content.vc,
+                x1 + p->box.iLeft, y1 + p->box.iTop, p->pNode);
+
+            iCursor += p->iMarginMainA + (isColumn ? h1 : w1)
+                + p->iMarginMainB + iGap + iBetween;
+        }
+        iMainExtent = MAX(iMainExtent, iCursor - iGap - iBetween);
+        iMainExtent = MAX(iMainExtent, 0);
+    }
+
+    /* Report the content size of the container. The main-axis size is
+     * the containing size when definite; the cross-axis size is the
+     * extent of the stacked lines. */
+    {
+        int iCrossExtent = 0;
+        for (ll = 0; ll < nLine; ll++) {
+            iCrossExtent = MAX(iCrossExtent,
+                aLine[ll].iCrossOff + aLine[ll].iCross);
+        }
         if (isColumn) {
-            x1 = iCrossOff + p->margin.margin_left;
-            y1 = iCursor + p->iMarginMainA;
-            w1 = p->iCross + p->box.iLeft + p->box.iRight;
-            h1 = p->iMain + p->box.iTop + p->box.iBottom;
+            pBox->height = (iMainAvail == PIXELVAL_AUTO)
+                ? iMainExtent : MAX(iMainAvail, iMainExtent);
+            pBox->width = MAX(pBox->width, iCrossExtent);
+            pBox->width = MAX(pBox->width, iCrossAvail);
         } else {
-            x1 = iCursor + p->iMarginMainA;
-            y1 = iCrossOff + p->margin.margin_top;
-            w1 = p->iMain + p->box.iLeft + p->box.iRight;
-            h1 = p->iCross + p->box.iTop + p->box.iBottom;
+            pBox->height = iCrossExtent;
+            pBox->width = MAX(pBox->width, pBox->iContaining);
+            pBox->width = MAX(pBox->width, iMainExtent);
         }
-
-        HtmlLayoutDrawBox(pLayout->pTree, &pBox->vc,
-            x1, y1, w1, h1, p->pNode, 0, pLayout->minmaxTest);
-        DRAW_CANVAS(&pBox->vc, &p->content.vc,
-            x1 + p->box.iLeft, y1 + p->box.iTop, p->pNode);
-
-        iCursor += p->iMarginMainA + (isColumn ? h1 : w1)
-            + p->iMarginMainB + iGap + iBetween;
     }
 
-    /* Report the content size of the container */
-    if (isColumn) {
-        int iMainUsedTotal = iUsedMain + iLead;
-        if (iMainAvail != PIXELVAL_AUTO) {
-            iMainUsedTotal = MAX(iMainAvail, iUsedMain);
-        }
-        pBox->height = iMainUsedTotal;
-        pBox->width = MAX(pBox->width, iLineCross);
-    } else {
-        pBox->height = iLineCross;
-        pBox->width = MAX(pBox->width, pBox->iContaining);
-        pBox->width = MAX(pBox->width, iUsedMain + MAX(0, iLead));
-    }
-
+    HtmlFree(aLine);
     HtmlFree(aItem);
     return 0;
 }
