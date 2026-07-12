@@ -1176,9 +1176,15 @@ eventHandler(clientData, pEvent)
             int iHeight = Tk_Height(pTree->tkwin);
             HtmlLog(pTree, "EVENT", "ConfigureNotify: width=%dpx", iWidth);
             if (
-                iWidth != pTree->iCanvasWidth || 
+                iWidth != pTree->iCanvasWidth ||
                 iHeight != pTree->iCanvasHeight
             ) {
+                /* If the stylesheet contains conditional @media rules,
+                 * the new viewport size may switch some of them on or
+                 * off - recompute styles, not just layout. */
+                if (HtmlCssStyleSheetHasConditions(pTree->pStyle)) {
+                    HtmlCallbackRestyle(pTree, pTree->pRoot);
+                }
                 HtmlCallbackLayout(pTree, pTree->pRoot);
                 snapshotZero(pTree);
                 HtmlCallbackDamage(pTree, 0, 0, iWidth, iHeight);

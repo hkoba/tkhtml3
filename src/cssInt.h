@@ -144,6 +144,27 @@ struct CssCustomMap {
     Tcl_HashTable h;             /* name ("--x") -> (char *)value */
 };
 
+/*
+ * One member of a conditional @media query list (Tier 2). Rules parsed
+ * inside a conditional "@media ... { }" block point (via
+ * CssRule.pMediaQuery) at a chain of these; members of the chain
+ * (pNext) are OR-ed. Evaluated against the current viewport size at
+ * style time by mediaQueryMatch() in css.c. All queries of a
+ * stylesheet are additionally linked through pNextAll for cleanup.
+ */
+typedef struct CssMediaQuery CssMediaQuery;
+struct CssMediaQuery {
+    int isNegate;                /* "not" prefix */
+    int isUnknown;               /* Unsupported feature: never matches */
+    int isTypeOk;                /* Media type is "all"/"screen"/absent */
+    int iMinWidth;               /* (min-width: Npx) or -1 */
+    int iMaxWidth;               /* (max-width: Npx) or -1 */
+    int iMinHeight;              /* (min-height: Npx) or -1 */
+    int iMaxHeight;              /* (max-height: Npx) or -1 */
+    CssMediaQuery *pNext;        /* Next member of the OR list */
+    CssMediaQuery *pNextAll;     /* All-queries list of the stylesheet */
+};
+
 
 /*
  * Before they are passed to the lemon-generated parser, the tokenizer
@@ -194,6 +215,7 @@ struct CssRule {
     CssPriority *pPriority;  /* Pointer to the priority of source stylesheet */
     int specificity;         /* Specificity of the selector */
     int iRule;               /* Rule-number within source style sheet */
+    CssMediaQuery *pMediaQuery;  /* Conditional @media, or NULL (not owned) */
     CssSelector *pSelector;  /* The selector-chain for this rule */
     int freePropertySets;          /* True to delete pPropertySet */
     int freeSelector;              /* True to delete pSelector */
@@ -252,6 +274,9 @@ struct CssStyleSheet {
     Tcl_HashTable aByTag;      /* Rule lists by tag (string keys) */
     Tcl_HashTable aByClass;    /* Rule lists by class (string keys) */
     Tcl_HashTable aById;       /* Rule lists by id (string keys) */
+
+    CssMediaQuery *pMediaQueryList;  /* All conditional queries (cleanup) */
+    int nMediaCondition;             /* Number of conditional queries */
 };
 
 /*
@@ -282,6 +307,12 @@ struct CssParse {
 
     /* In the body of a stylesheet @import directives must be ignored. */
     int isBody;                     /* True once we are in the body */
+
+    /* Conditional @media block currently being parsed, if any. Rules
+     * created while this is set carry the query and are evaluated
+     * against the viewport at style time.
+     */
+    CssMediaQuery *pMediaQuery;
 
     int origin;
     Tcl_Obj *pStyleId;

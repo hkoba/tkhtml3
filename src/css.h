@@ -71,6 +71,10 @@ typedef struct CssCustomMap CssCustomMap;
 /* Release a reference to an element's custom-property map. */
 void HtmlCssCustomMapRelease(CssCustomMap *);
 
+/* True if the stylesheet contains conditional @media rules, i.e. the
+ * document must be restyled when the viewport size changes. */
+int HtmlCssStyleSheetHasConditions(CssStyleSheet *);
+
 /* Include html.h after we define our opaque types, because it includes
  * structures that contain pointers to them.
  */

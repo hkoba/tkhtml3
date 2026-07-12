@@ -1155,6 +1155,252 @@ static int parseMediaList(pInput, pIsMatch)
 /*
  *---------------------------------------------------------------------------
  *
+ * mediaFeatureValueToPx --
+ *
+ *     Convert the value text of a width/height media feature to
+ *     pixels. Supports px exactly and em/rem at the conventional
+ *     16px/em (media query lengths never depend on element context).
+ *
+ * Results:
+ *     Zero on success (pixels in *pPx), non-zero if the value is not
+ *     understood.
+ *
+ *---------------------------------------------------------------------------
+ */
+static int
+mediaFeatureValueToPx(z, n, pPx)
+    const char *z;
+    int n;
+    int *pPx;
+{
+    char zBuf[32];
+    char *zEnd;
+    double r;
+
+    while (n > 0 && isspace((unsigned char)z[n-1])) n--;
+    while (n > 0 && isspace((unsigned char)*z)) { z++; n--; }
+    if (n <= 0 || n >= (int)sizeof(zBuf)) return 1;
+    memcpy(zBuf, z, n);
+    zBuf[n] = '\0';
+
+    r = strtod(zBuf, &zEnd);
+    if (zEnd == zBuf) return 1;
+    if (0 == stricmp(zEnd, "px")) {
+        *pPx = (int)(r + 0.5);
+    } else if (0 == stricmp(zEnd, "em") || 0 == stricmp(zEnd, "rem")) {
+        *pPx = (int)(r * 16.0 + 0.5);
+    } else if (*zEnd == '\0' && r == 0.0) {
+        *pPx = 0;
+    } else {
+        return 1;
+    }
+    return 0;
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
+ * parseMediaQueryList --
+ *
+ *     Parse the media query list of an @media rule, including the
+ *     conditional forms from CSS Media Queries level 3:
+ *
+ *         @media screen { ... }
+ *         @media (min-width: 700px) { ... }
+ *         @media screen and (min-width:700px) and (max-width:900px) {..}
+ *         @media print, (min-width: 700px) { ... }
+ *
+ *     If every member of the comma list is a bare media type (the
+ *     historic form), *ppQuery is set to NULL and *pIsMatch reports
+ *     whether one of the types applies ("all" or "screen") - the
+ *     caller then uses the old static skip-the-block behaviour.
+ *
+ *     If any member carries a condition or a "not" prefix, a chain of
+ *     CssMediaQuery objects (one per member, OR semantics) is returned
+ *     in *ppQuery for style-time evaluation, and registered with the
+ *     stylesheet for cleanup. Supported features: min-width/max-width/
+ *     min-height/max-height. A member using any other feature never
+ *     matches (the CSS "unknown means not-all" rule).
+ *
+ * Results:
+ *     Zero on success, non-zero on a syntax error.
+ *
+ *---------------------------------------------------------------------------
+ */
+static int
+parseMediaQueryList(pInput, pParse, pIsMatch, ppQuery)
+    CssInput *pInput;
+    CssParse *pParse;
+    int *pIsMatch;
+    CssMediaQuery **ppQuery;
+{
+    CssMediaQuery *pFirst = 0;
+    CssMediaQuery *pLast = 0;
+    int hasCondition = 0;
+    int typeMatch = 0;
+
+    *ppQuery = 0;
+    *pIsMatch = 0;
+
+    while (1) {
+        CssMediaQuery sQ;
+        CssMediaQuery *pQ;
+        CssTokenType eToken;
+        const char *zT;
+        int nT;
+
+        memset(&sQ, 0, sizeof(sQ));
+        sQ.isTypeOk = 1;                  /* No media type means "all" */
+        sQ.iMinWidth = sQ.iMaxWidth = -1;
+        sQ.iMinHeight = sQ.iMaxHeight = -1;
+
+        /* Parse one member of the comma list */
+        while (1) {
+            eToken = inputGetToken(pInput, &zT, &nT);
+            if (eToken==CT_COMMA || eToken==CT_LP || eToken==CT_EOF) break;
+
+            if (eToken == CT_SPACE) {
+                inputNextToken(pInput);
+                continue;
+            }
+
+            if (eToken == CT_IDENT) {
+                if (nT == 4 && 0 == strnicmp("only", zT, 4)) {
+                    /* no effect */
+                } else if (nT == 3 && 0 == strnicmp("not", zT, 3)) {
+                    sQ.isNegate = 1;
+                    hasCondition = 1;
+                } else if (nT == 3 && 0 == strnicmp("and", zT, 3)) {
+                    /* connective */
+                } else {
+                    sQ.isTypeOk = (
+                        (nT == 3 && 0 == strnicmp("all", zT, 3)) ||
+                        (nT == 6 && 0 == strnicmp("screen", zT, 6))
+                    );
+                }
+                inputNextToken(pInput);
+                continue;
+            }
+
+            if (eToken == CT_LRP) {
+                /* "( feature : value )" */
+                const char *zFeat;
+                int nFeat;
+                hasCondition = 1;
+
+                inputNextToken(pInput);
+                if (CT_SPACE == inputGetToken(pInput, 0, 0)) {
+                    inputNextToken(pInput);
+                }
+                if (CT_IDENT != inputGetToken(pInput, &zFeat, &nFeat)) {
+                    goto query_syntax_error;
+                }
+                inputNextToken(pInput);
+                if (CT_SPACE == inputGetToken(pInput, 0, 0)) {
+                    inputNextToken(pInput);
+                }
+
+                if (CT_COLON == inputGetToken(pInput, 0, 0)) {
+                    /* Collect the value text up to the closing ')' */
+                    const char *zVal = 0;
+                    const char *zValEnd = 0;
+                    int iPx;
+
+                    inputNextToken(pInput);
+                    while (1) {
+                        const char *zV;
+                        int nV;
+                        eToken = inputGetToken(pInput, &zV, &nV);
+                        if (eToken == CT_RRP || eToken == CT_EOF) break;
+                        if (eToken != CT_SPACE) {
+                            if (!zVal) zVal = zV;
+                            zValEnd = &zV[nV];
+                        }
+                        inputNextToken(pInput);
+                    }
+                    if (eToken != CT_RRP || !zVal) goto query_syntax_error;
+
+                    if (mediaFeatureValueToPx(zVal, zValEnd-zVal, &iPx)) {
+                        sQ.isUnknown = 1;
+                    } else if (nFeat==9 && !strnicmp("min-width",zFeat,9)) {
+                        sQ.iMinWidth = iPx;
+                    } else if (nFeat==9 && !strnicmp("max-width",zFeat,9)) {
+                        sQ.iMaxWidth = iPx;
+                    } else if (nFeat==10 && !strnicmp("min-height",zFeat,10)){
+                        sQ.iMinHeight = iPx;
+                    } else if (nFeat==10 && !strnicmp("max-height",zFeat,10)){
+                        sQ.iMaxHeight = iPx;
+                    } else {
+                        sQ.isUnknown = 1;
+                    }
+                } else {
+                    /* Boolean feature form: "(orientation)" etc. */
+                    sQ.isUnknown = 1;
+                }
+
+                if (CT_SPACE == inputGetToken(pInput, 0, 0)) {
+                    inputNextToken(pInput);
+                }
+                if (CT_RRP != inputGetToken(pInput, 0, 0)) {
+                    goto query_syntax_error;
+                }
+                inputNextToken(pInput);
+                continue;
+            }
+
+            goto query_syntax_error;
+        }
+
+        typeMatch = typeMatch || sQ.isTypeOk;
+
+        pQ = HtmlNew(CssMediaQuery);
+        *pQ = sQ;
+        if (pLast) {
+            pLast->pNext = pQ;
+        } else {
+            pFirst = pQ;
+        }
+        pLast = pQ;
+
+        if (eToken != CT_COMMA) break;
+        inputNextToken(pInput);
+    }
+
+    if (!hasCondition) {
+        /* The historic types-only form */
+        while (pFirst) {
+            CssMediaQuery *pNext = pFirst->pNext;
+            HtmlFree(pFirst);
+            pFirst = pNext;
+        }
+        *pIsMatch = typeMatch;
+        return 0;
+    }
+
+    /* Register the queries with the stylesheet for cleanup */
+    if (pParse->pStyle) {
+        CssMediaQuery *pQ;
+        for (pQ = pFirst; pQ; pQ = pQ->pNext) {
+            pQ->pNextAll = pParse->pStyle->pMediaQueryList;
+            pParse->pStyle->pMediaQueryList = pQ;
+            pParse->pStyle->nMediaCondition++;
+        }
+    }
+    *ppQuery = pFirst;
+    return 0;
+
+  query_syntax_error:
+    while (pFirst) {
+        CssMediaQuery *pNext = pFirst->pNext;
+        HtmlFree(pFirst);
+        pFirst = pNext;
+    }
+    return 1;
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
  * parseAtRule --
  *
  * Results:
@@ -1205,12 +1451,20 @@ static int parseAtRule(CssInput *pInput, CssParse *pParse){
   
     else if (nWord == 5 && strnicmp("media", zWord, nWord) == 0) {
         int media_ok;
+        CssMediaQuery *pQuery = 0;
         pParse->isBody = 1;
         inputNextTokenIgnoreSpace(pInput);
-        if (parseMediaList(pInput, &media_ok)) return 1;
+        if (parseMediaQueryList(pInput, pParse, &media_ok, &pQuery)) return 1;
         if (CT_LP != inputGetToken(pInput, 0, 0)) return 1;
         inputNextToken(pInput);
-        if (!media_ok) {
+        if (pQuery) {
+            /* A conditional media query. The rules inside the block
+             * are parsed normally but tagged with the query, to be
+             * evaluated against the viewport at style time. The
+             * block's closing '}' resets this (HtmlCssRunParser).
+             */
+            pParse->pMediaQuery = pQuery;
+        } else if (!media_ok) {
             /* The media does not match. Skip tokens until the end of
              * the block.
              */
@@ -1288,6 +1542,9 @@ void HtmlCssRunParser(zInput, nInput, pParse)
         if (eToken == CT_SGML_OPEN || eToken == CT_SGML_CLOSE) {
             isSyntaxError = 0;
         } else if (eToken == CT_RP) {
+            /* A '}' at the top level closes a conditional @media block
+             * (rules inside such a block are parsed inline). */
+            pParse->pMediaQuery = 0;
             isSyntaxError = 0;
         } else if (eToken == CT_AT) {
             isSyntaxError = parseAtRule(&sInput, pParse);

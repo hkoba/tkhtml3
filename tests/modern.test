@@ -25,6 +25,9 @@
 #
 #     modern-7.*  CSS custom properties ("--x") and var().
 #
+#     modern-8.*  Conditional @media queries (min/max-width/height),
+#                 including restyle-on-resize.
+#
 # Note: when testing with properties, prefer 'color' - the initial value
 # of e.g. 'border-top-width' is "medium" (2px), which is easy to confuse
 # with a test value.
@@ -494,6 +497,59 @@ tcltest::test modern-7.9 {reference cycles are rejected, not fatal} -body {
   }
   .h parse -final {<body><div id="j">x</div></body>}
   property [idnode j] color
+} -result {purple}
+
+#--------------------------------------------------------------------------
+# modern-8.*: conditional @media queries.
+#
+proc mq_setup {} {
+  wm geometry . 400x300
+  update
+  .h reset
+  .h style {
+    #a { color: black }
+    @media (max-width: 500px) {
+      #a { color: red }
+      #b { --tone: green }
+    }
+    @media (min-width: 501px) {
+      #a { color: blue }
+    }
+    @media screen and (min-width: 200px) and (max-width: 4000px) {
+      #c { color: purple }
+    }
+    @media print { #d { color: red } }
+    @media (orientation: landscape) { #e { color: red } }
+    #b span { color: var(--tone, black) }
+  }
+  .h parse -final {<html><body>
+    <div id="a">x</div>
+    <div id="b"><span id="s">y</span></div>
+    <div id="c">z</div><div id="d">p</div><div id="e">o</div>
+  </body></html>}
+  update
+}
+
+tcltest::test modern-8.0 {conditional media queries at 400px} -body {
+  mq_setup
+  list [property [idnode a] color] [property [idnode s] color] \
+       [property [idnode c] color] [property [idnode d] color] \
+       [property [idnode e] color]
+} -result {red green purple black black}
+
+tcltest::test modern-8.1 {resize across the breakpoint restyles} -body {
+  wm geometry . 700x300
+  update
+  after 200 {set ::mq_done 1}; vwait ::mq_done
+  update
+  list [property [idnode a] color] [property [idnode s] color]
+} -result {blue black}
+
+tcltest::test modern-8.2 {unconditional rules unaffected by resize} -body {
+  set r [property [idnode c] color]
+  wm geometry . {}
+  update
+  set r
 } -result {purple}
 
 finish_test

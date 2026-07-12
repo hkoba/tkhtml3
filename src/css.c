@@ -2899,14 +2899,15 @@ HtmlCssStyleSheetFree(pStyle)
 {
     if (pStyle) {
         CssPriority *pPriority;
+        CssMediaQuery *pQuery;
 
         /* Free the universal rules list */
-        freeRulesList(&pStyle->pUniversalRules); 
-        freeRulesList(&pStyle->pAfterRules); 
-        freeRulesList(&pStyle->pBeforeRules); 
-        freeRulesHash(&pStyle->aByTag); 
-        freeRulesHash(&pStyle->aByClass); 
-        freeRulesHash(&pStyle->aById); 
+        freeRulesList(&pStyle->pUniversalRules);
+        freeRulesList(&pStyle->pAfterRules);
+        freeRulesList(&pStyle->pBeforeRules);
+        freeRulesHash(&pStyle->aByTag);
+        freeRulesHash(&pStyle->aByClass);
+        freeRulesHash(&pStyle->aById);
 
         /* Free the priorities list */
         pPriority = pStyle->pPriority;
@@ -2917,8 +2918,60 @@ HtmlCssStyleSheetFree(pStyle)
             pPriority = pNext;
         }
 
+        /* Free the conditional media queries */
+        pQuery = pStyle->pMediaQueryList;
+        while (pQuery) {
+            CssMediaQuery *pNext = pQuery->pNextAll;
+            HtmlFree(pQuery);
+            pQuery = pNext;
+        }
+
         HtmlFree(pStyle);
     }
+}
+
+/*
+ * True if the stylesheet contains conditional @media rules - i.e. the
+ * document must be restyled when the viewport size changes.
+ */
+int
+HtmlCssStyleSheetHasConditions(pStyle)
+    CssStyleSheet *pStyle;
+{
+    return (pStyle && pStyle->nMediaCondition > 0);
+}
+
+/*
+ * Evaluate a conditional media query chain (OR semantics across the
+ * chain) against the current viewport size. A NULL query matches
+ * unconditionally.
+ */
+static int
+mediaQueryMatch(pTree, pQuery)
+    HtmlTree *pTree;
+    CssMediaQuery *pQuery;
+{
+    int w, h;
+
+    if (!pQuery) return 1;
+
+    w = Tk_Width(pTree->tkwin);
+    h = Tk_Height(pTree->tkwin);
+    if (w <= 1) w = pTree->options.width;
+    if (h <= 1) h = pTree->options.height;
+
+    for ( ; pQuery; pQuery = pQuery->pNext) {
+        int m;
+        if (pQuery->isUnknown) continue;   /* "unknown means not-all" */
+        m = pQuery->isTypeOk &&
+            (pQuery->iMinWidth  < 0 || w >= pQuery->iMinWidth) &&
+            (pQuery->iMaxWidth  < 0 || w <= pQuery->iMaxWidth) &&
+            (pQuery->iMinHeight < 0 || h >= pQuery->iMinHeight) &&
+            (pQuery->iMaxHeight < 0 || h <= pQuery->iMaxHeight);
+        if (pQuery->isNegate) m = !m;
+        if (m) return 1;
+    }
+    return 0;
 }
 
 /*
@@ -3256,6 +3309,10 @@ cssSelectorPropertySetPair(pParse, pSelector, pPropertySet, freeWhat)
     CssRule *pRule = HtmlNew(CssRule);
 
     assert(pPropertySet && pPropertySet->n > 0);
+
+    /* Rules created inside a conditional @media block carry the query
+     * (owned by the stylesheet) for style-time evaluation. */
+    pRule->pMediaQuery = pParse->pMediaQuery;
 
     if (freeWhat & FREE_PROPERTYSET) {
         pRule->freePropertySets = 1;
@@ -4422,6 +4479,7 @@ customPropsCascade(pTree, pNode, apRule, npRule)
         pRule = nextRule(apRule, npRule)
     ) {
         if (!propertySetHasCustoms(pRule->pPropertySet)) continue;
+        if (!mediaQueryMatch(pTree, pRule->pMediaQuery)) continue;
         if (!HtmlCssSelectorTest(pRule->pSelector, pNode, 0)) continue;
         customsFromSet(&pNew, pRule->pPropertySet);
     }
@@ -4508,6 +4566,10 @@ HtmlCssStyleSheetApply(pTree, pNode)
     ) {
         CssPriority *pPriority = pRule->pPriority;
         CssSelector *pSelector = pRule->pSelector;
+
+        /* Skip rules from conditional @media blocks whose query does
+         * not match the current viewport. */
+        if (!mediaQueryMatch(pTree, pRule->pMediaQuery)) continue;
 
         nSelectorTest++;
 
@@ -4615,7 +4677,9 @@ generatedContent(pTree, pNode, pCssRule, ppNode)
     sCreator.pzContent = &zContent;
     for (pRule = pCssRule; pRule; pRule = pRule->pNext) {
         char **pz = (have ? 0 : (&zContent));
-        int isMatch = applyRule(pTree, pNode, pRule, aPropDone, pz, &sCreator);
+        int isMatch;
+        if (!mediaQueryMatch(pTree, pRule->pMediaQuery)) continue;
+        isMatch = applyRule(pTree, pNode, pRule, aPropDone, pz, &sCreator);
         if (isMatch) have = 1;
     }
     if (have) {
