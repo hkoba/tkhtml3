@@ -90,6 +90,27 @@ Two Acid2 traits that look like bugs but are by design:
   inequalities (see modern-5.*) - absolute pixel heights of text
   depend on the fonts installed on the CI machine.
 
+## Assert-stripped-build trap
+
+The usual local build (bld/) compiles with -DNDEBUG, so every
+assert() in the engine is COMPILED OUT - the full suite can pass
+locally while CI (which builds without NDEBUG) aborts on an assertion
+and dumps core (exit 134). This happened with the flexbox text-only
+fallback: it routes display:flex nodes into normalFlowLayout(), whose
+entry assert did not list flex, and two pushes failed in CI.
+
+Keep an assert-enabled build next to the normal one and run the suite
+under it before pushing engine changes:
+
+    mkdir -p bld-debug && cd bld-debug
+    ../configure --with-tcl=/usr/lib64 --with-tk=/usr/lib64 \
+        --enable-shared --enable-symbols && make
+    cd .. && TCLLIBPATH=$PWD/bld-debug xvfb-run -a \
+        -s "-screen 0 1280x1024x24" tclsh9.0 tests/all.tcl
+
+(--enable-symbols drops -DNDEBUG; bld-debug/ is gitignored. The
+stale-object trap below applies to it too.)
+
 ## Stale-object trap
 
 The generated TEA Makefile in bld/ has **no header dependency

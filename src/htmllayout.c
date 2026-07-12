@@ -2204,8 +2204,16 @@ wrapContent(pLayout, pBox, pContent, pNode)
     if (pV->ePosition == CSS_CONST_RELATIVE) {
         assert(pV->position.iLeft != PIXELVAL_AUTO);
         assert(pV->position.iTop != PIXELVAL_AUTO);
-        assert(pV->position.iLeft == -1 * pV->position.iRight);
-        assert(pV->position.iTop == -1 * pV->position.iBottom);
+        /* HtmlComputedValuesFinish() (CSS 2.1 9.4.3) forces
+         * left == -right and top == -bottom. For calc() pairs the
+         * negation is per component (HTML_CALCPCT_NEG), so compare
+         * that way when the calcmask bit is set. */
+        assert((pV->calcmask & PROP_MASK_LEFT)
+            ? pV->position.iLeft == HTML_CALCPCT_NEG(pV->position.iRight)
+            : pV->position.iLeft == -1 * pV->position.iRight);
+        assert((pV->calcmask & PROP_MASK_TOP)
+            ? pV->position.iTop == HTML_CALCPCT_NEG(pV->position.iBottom)
+            : pV->position.iTop == -1 * pV->position.iBottom);
         iRelLeft = PIXELVAL(pV, LEFT, pBox->iContaining);
         iRelTop = PIXELVAL(pV, TOP, 0);
         x += iRelLeft;
@@ -3721,13 +3729,19 @@ normalFlowLayout(pLayout, pBox, pNode, pNormal)
     CHECK_INTEGER_PLAUSIBILITY(pBox->vc.bottom);
     CHECK_INTEGER_PLAUSIBILITY(pBox->vc.right);
 
-    /* TODO: Should the fourth case ("display:inline") really be here? */
-    assert( 
+    /* TODO: Should the fourth case ("display:inline") really be here?
+     *
+     * flex and inline-flex appear because a flex container with no
+     * element children deliberately falls back to normal-flow layout
+     * (see HtmlFlexLayout() and HtmlLayoutNodeContent()). */
+    assert(
         DISPLAY(pV) == CSS_CONST_BLOCK ||
         DISPLAY(pV) == CSS_CONST_INLINE_BLOCK ||
         DISPLAY(pV) == CSS_CONST_TABLE_CELL ||
         DISPLAY(pV) == CSS_CONST_LIST_ITEM ||
         DISPLAY(pV) == CSS_CONST_INLINE ||
+        DISPLAY(pV) == CSS_CONST_FLEX ||
+        DISPLAY(pV) == CSS_CONST_INLINE_FLEX ||
         DISPLAY(pV) == CSS_CONST__TKHTML_INLINE_BUTTON
     );
     assert(!nodeIsReplaced(pNode));
