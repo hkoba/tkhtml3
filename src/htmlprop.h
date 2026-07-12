@@ -306,8 +306,9 @@ struct HtmlComputedValues {
 
     unsigned char eCursor;            /* 'cursor' */
 
-    /* Properties not yet in use - TODO! */
     int iWordSpacing;                 /* 'word-spacing'   (pixels, NORMAL) */
+
+    /* Properties not yet in use - TODO! */
     int iLetterSpacing;               /* 'letter-spacing' (pixels, NORMAL) */
     unsigned char eTextTransform;     /* 'text-transform' */
     unsigned char eDirection;         /* 'direction' */

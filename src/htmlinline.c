@@ -1702,6 +1702,15 @@ HtmlInlineContextAddText(pContext, pNode)
     sw = pFont->space_pixels;
     nh = pFont->metrics.ascent + pFont->metrics.descent;
 
+    /* 'word-spacing' adds to (or, if negative, subtracts from) the
+     * width of each space character. Values are already resolved to
+     * pixels by the styler; PIXELVAL_NORMAL means "normal".
+     */
+    if (pValues->iWordSpacing != PIXELVAL_NORMAL) {
+        sw += pValues->iWordSpacing;
+        if (sw < 0) sw = 0;
+    }
+
     assert(HtmlNodeIsText(pNode));
 
     for (

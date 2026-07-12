@@ -20,6 +20,9 @@
 #                 (and width inequalities) so they do not depend on the
 #                 fonts installed on the machine.
 #
+#     modern-6.*  word-spacing (letter-spacing is still unrendered -
+#                 see the audit note in agent_docs/roadmap.md).
+#
 # Note: when testing with properties, prefer 'color' - the initial value
 # of e.g. 'border-top-width' is "medium" (2px), which is easy to confuse
 # with a test value.
@@ -370,5 +373,26 @@ tcltest::test modern-5.1 {pre-wrap preserves space runs, pre-line collapses} -bo
   # rendering exactly as wide as white-space normal.
   list [expr {$w(pw) > $w(pl)}] [expr {$w(pl) == $w(nm)}]
 } -result {1 1}
+
+#--------------------------------------------------------------------------
+# modern-6.*: word-spacing.
+#
+tcltest::test modern-6.0 {word-spacing adds to each space} -body {
+  .h reset
+  .h style {
+    span { display: inline-block; font-size: 10px }
+    #ws { word-spacing: 10px }
+  }
+  .h parse -final "<html><body>
+    <div><span id='nm'>a b c</span></div>
+    <div><span id='ws'>a b c</span></div>
+  </body></html>"
+  foreach id {nm ws} {
+    set bb [.h bbox [idnode $id]]
+    set w($id) [expr {[lindex $bb 2] - [lindex $bb 0]}]
+  }
+  # two spaces, 10px extra each
+  expr {$w(ws) - $w(nm)}
+} -result {20}
 
 finish_test

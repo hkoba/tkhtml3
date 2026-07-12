@@ -44,8 +44,16 @@ generated content (`content`, `:before/:after`, counters),
 px `border-radius`, inline-block). Infrastructure worth reusing:
 `HtmlImageScale()` (htmlimage.c — scaled-image cache, the natural base
 for `background-size`) and `HtmlCallbackRestyle()` (htmltcl.c — the
-hook a resize-triggered restyle needs). `letter-spacing`/`word-spacing`
-are *declared* in cssprop.tcl but their render wiring is unaudited.
+hook a resize-triggered restyle needs).
+
+Audit outcome (2026-07, Tier 1): `word-spacing` and `letter-spacing`
+both had full computed-value support (LENGTH type with their own
+PROP_MASK bits, em resolution included) — only the consumers were
+missing. `word-spacing` is now wired into the inline layer
+(HtmlInlineContextAddText adds it to the width of each space).
+`letter-spacing` remains computed-but-unrendered: rendering it means
+per-character text drawing/measurement, an M-sized change — see the
+options menu below.
 
 ## Tier 1 — modern baseline pack (sum ≈ M: 600–1,100 lines)
 
@@ -74,8 +82,9 @@ HTML/CSS stop degrading:
 6. **`white-space: pre-wrap / pre-line`** [S–M] — extend the
    whitespace state machine in htmlinline.c (currently
    normal/pre/nowrap only).
-7. **letter/word-spacing audit** [S] — check whether the declared
-   properties reach the text painter; wire them if not.
+7. **letter/word-spacing audit** [S] — DONE: word-spacing wired (a
+   few lines in htmlinline.c); letter-spacing needs per-character
+   drawing → moved to the options menu as [M].
 
 ## Tier 2 — design tokens and responsiveness (each M)
 
@@ -155,6 +164,7 @@ app UIs, so this tier is demand-driven.
 | `box-shadow` (no blur) | S | offset filled rect behind the box; zero per-pixel math |
 | `background-size` (incl. cover/contain) | M | reuse `HtmlImageScale()` |
 | `text-overflow: ellipsis` | M | line-breaker + overflow interplay |
+| `letter-spacing` rendering | M | computed value exists; needs per-character draw/measure in the text path |
 | `aspect-ratio` | S–M | hooks into getWidth/getHeight auto resolution |
 | `position: sticky` | M | relative + cheap per-scroll offset adjustment |
 | `:is()` / `:where()` | M | OR-matching + specificity (max / zero); needed for Tailwind-style compiled sheets |
