@@ -19,6 +19,17 @@ typedef struct LayoutContext LayoutContext;
 typedef struct NodeList NodeList;
 
 /*
+ * This structure is (fairly obviously) used to link node structures into a
+ * linked list. This is used as part of the process to layout a node with the
+ * 'position' property set to "absolute".
+ */
+struct NodeList {
+    HtmlNode *pNode;
+    NodeList *pNext;
+    HtmlCanvasItem *pMarker;       /* Static position marker */
+};
+
+/*
  * A single Layout context object is allocated for use throughout
  * the entire layout process. It contains global resources required
  * by the drawing routines.
@@ -136,6 +147,8 @@ void nodeGetMargins(LayoutContext *, HtmlNode *, int, MarginProperties *);
 int  blockMinMaxWidth(LayoutContext *, HtmlNode *, int *, int *);
 
 int getHeight(HtmlNode *, int, int);
+int boxSizingSubtract(LayoutContext *, HtmlNode *, int, int, int);
+void considerMinMaxWidth(HtmlNode *, int, int *);
 
 /*--------------------------------------------------------------------------*
  * htmltable.c --
@@ -146,6 +159,16 @@ int HtmlTableLayout(LayoutContext*, BoxContext*, HtmlNode*);
 
 /* End of htmlTableLayout.c interface
  *-------------------------------------------------------------------------*/
+
+/*--------------------------------------------------------------------------*
+ * htmlflexlayout.c --
+ *
+ *     Single-line flexbox layout (roadmap Tier 3 stage A). Returns
+ *     non-zero if the container has no element children - the caller
+ *     (HtmlLayoutNodeContent) then falls back to normal-flow layout so
+ *     that text-only "display:flex" elements still render their text.
+ */
+int HtmlFlexLayout(LayoutContext*, BoxContext*, HtmlNode*);
 
 int HtmlLayoutNodeContent(LayoutContext *, BoxContext *, HtmlNode *);
 

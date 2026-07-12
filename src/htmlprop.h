@@ -541,6 +541,7 @@ int HtmlComputedValuesCompare(HtmlComputedValues *, HtmlComputedValues *);
 #define HTML_COMPUTED_MAX_HEIGHT      iMaxHeight
 #define HTML_COMPUTED_MAX_WIDTH       iMaxWidth
 #define HTML_COMPUTED_TEXT_INDENT     iTextIndent
+#define HTML_COMPUTED_FLEX_BASIS      iFlexBasis
 
 /* The PIXELVAL macro takes three arguments:
  * 

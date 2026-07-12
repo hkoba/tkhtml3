@@ -74,17 +74,6 @@ typedef struct NormalFlow NormalFlow;
 typedef struct LayoutCache LayoutCache;
 
 /*
- * This structure is (fairly obviously) used to link node structures into a
- * linked list. This is used as part of the process to layout a node with the
- * 'position' property set to "absolute".
- */
-struct NodeList {
-    HtmlNode *pNode;
-    NodeList *pNext;
-    HtmlCanvasItem *pMarker;       /* Static position marker */
-};
-
-/*
  * The iMaxMargin, iMinMargin and isValid variables are used to manage
  * collapsing vertical margins. Each margin that collapses at a given
  * point in the vertical flow is added to the structure using
@@ -187,6 +176,7 @@ static FlowLayoutFunc normalFlowLayoutInline;
 static FlowLayoutFunc normalFlowLayoutInlineReplaced;
 static FlowLayoutFunc normalFlowLayoutAbsolute;
 static FlowLayoutFunc normalFlowLayoutOverflow;
+static FlowLayoutFunc normalFlowLayoutFlex;
 
 /* Manage collapsing vertical margins in a normal-flow */
 static void normalFlowMarginCollapse(LayoutContext*,HtmlNode*,NormalFlow*,int*);
@@ -520,7 +510,7 @@ nodeIsReplaced(pNode)
  *
  *---------------------------------------------------------------------------
  */
-static int
+int
 boxSizingSubtract(pLayout, pNode, iContaining, iVal, isVertical)
     LayoutContext *pLayout;
     HtmlNode *pNode;
@@ -651,7 +641,7 @@ getWidthProperty(pLayout, pNode, pComputed, iContaining)
  *
  *---------------------------------------------------------------------------
  */
-static void
+void
 considerMinMaxWidth(pNode, iContaining, piWidth)
     HtmlNode *pNode;
     int iContaining;
@@ -1119,12 +1109,13 @@ normalFlowLayoutFloat(pLayout, pBox, pNode, pY, pDoNotUse, pNormal)
 
     /* The code that calculates computed values (htmlprop.c) should have
      * ensured that all floating boxes have a 'display' value of "block",
-     * "table" or "list-item".
+     * "table", "list-item" or "flex".
      */
     assert(
-      DISPLAY(pV) == CSS_CONST_BLOCK || 
+      DISPLAY(pV) == CSS_CONST_BLOCK ||
       DISPLAY(pV) == CSS_CONST_TABLE ||
-      DISPLAY(pV) == CSS_CONST_LIST_ITEM
+      DISPLAY(pV) == CSS_CONST_LIST_ITEM ||
+      DISPLAY(pV) == CSS_CONST_FLEX
     );
     assert(eFloat == CSS_CONST_LEFT || eFloat == CSS_CONST_RIGHT);
 
@@ -1629,6 +1620,13 @@ HtmlLayoutNodeContent(pLayout, pBox, pNode)
     } else if (eDisplay == CSS_CONST_TABLE) {
         /* All the work for tables is done in htmltable.c */
         HtmlTableLayout(pLayout, pBox, pNode);
+    } else if (
+        (eDisplay == CSS_CONST_FLEX || eDisplay == CSS_CONST_INLINE_FLEX) &&
+        0 == HtmlFlexLayout(pLayout, pBox, pNode)
+    ) {
+        /* Flex containers are laid out in htmlflexlayout.c. A non-zero
+         * return means the container has no element children; fall
+         * through to normal-flow layout so bare text still renders. */
     } else {
         /* Set up a new NormalFlow for this flow */
         HtmlFloatList *pFloat;
@@ -2479,6 +2477,127 @@ normalFlowLayoutTable(pLayout, pBox, pNode, pY, pContext, pNormal)
 /*
  *---------------------------------------------------------------------------
  *
+ * normalFlowLayoutFlex --
+ *
+ *     Called when a "display:flex" box is encountered in the normal
+ *     flow. Like a table, a flex container establishes an independent
+ *     formatting context; unlike a table (and like a block), an "auto"
+ *     width fills the containing block. The content itself is laid out
+ *     by HtmlFlexLayout() (htmlflexlayout.c), reached via
+ *     HtmlLayoutNodeContent().
+ *
+ * Results:
+ *     Always 0.
+ *
+ * Side effects:
+ *     None.
+ *
+ *---------------------------------------------------------------------------
+ */
+static int
+normalFlowLayoutFlex(pLayout, pBox, pNode, pY, pContext, pNormal)
+    LayoutContext *pLayout;
+    BoxContext *pBox;
+    HtmlNode *pNode;
+    int *pY;
+    InlineContext *pContext;
+    NormalFlow *pNormal;
+{
+    HtmlComputedValues *pV = HtmlNodeComputedValues(pNode);
+    int iContaining = pBox->iContaining;
+    HtmlFloatList *pFloat = pNormal->pFloat;
+
+    int iLeftFloat = 0;
+    int iRightFloat = pBox->iContaining;
+
+    int iWidth;                   /* Specified content width */
+    int iUsedWidth;               /* Used content width */
+    int iSpecHeight;              /* Specified content height */
+
+    int x, y;                     /* Coords for content to be drawn */
+    BoxContext sContent;          /* Box context for the flex content */
+    BoxContext sBox;              /* sContent + borders */
+    MarginProperties margin;      /* Margin properties of pNode */
+    BoxProperties box;            /* Box properties of pNode */
+    int iMPB;                     /* Sum of margins, padding and borders */
+
+    nodeGetMargins(pLayout, pNode, iContaining, &margin);
+    nodeGetBoxProperties(pLayout, pNode, iContaining, &box);
+    iMPB = box.iLeft + box.iRight + margin.margin_left + margin.margin_right;
+
+    /* Collapse the vertical margin above this box now (margins never
+     * collapse through a flex container - it is an independent
+     * formatting context, same as a table).
+     */
+    normalFlowMarginAdd(pLayout, pNode, pNormal, margin.margin_top);
+    normalFlowMarginCollapse(pLayout, pNode, pNormal, pY);
+
+    iWidth = PIXELVAL(
+        pV, WIDTH, pLayout->minmaxTest ? PIXELVAL_AUTO : iContaining
+    );
+    iWidth = boxSizingSubtract(pLayout, pNode, iContaining, iWidth, 0);
+
+    if (iWidth == PIXELVAL_AUTO) {
+        /* Fill the containing block, narrowing between floats (the
+         * standard behaviour of boxes that establish new formatting
+         * contexts). */
+        int iMinWidth;
+        blockMinMaxWidth(pLayout, pNode, &iMinWidth, 0);
+        *pY = HtmlFloatListPlace(
+            pFloat, iContaining, iMPB + iMinWidth, 10000, *pY);
+        HtmlFloatListMargins(pFloat, *pY, *pY + 10000,
+            &iLeftFloat, &iRightFloat);
+        iUsedWidth = iRightFloat - iLeftFloat - iMPB;
+    } else {
+        iUsedWidth = iWidth;
+    }
+    considerMinMaxWidth(pNode, iContaining, &iUsedWidth);
+
+    iSpecHeight = PIXELVAL(pV, HEIGHT, pBox->iContainingHeight);
+    if (iSpecHeight != PIXELVAL_AUTO) {
+        iSpecHeight = boxSizingSubtract(pLayout, pNode, -1, iSpecHeight, 1);
+    }
+
+    memset(&sContent, 0, sizeof(BoxContext));
+    memset(&sBox, 0, sizeof(BoxContext));
+    sContent.iContaining = iUsedWidth;
+    sContent.iContainingHeight = iSpecHeight;
+    HtmlLayoutNodeContent(pLayout, &sContent, pNode);
+
+    sContent.height = getHeight(pNode, sContent.height,
+        pBox->iContainingHeight);
+    if (!pLayout->minmaxTest) {
+        sContent.width = MAX(sContent.width, iUsedWidth);
+    }
+    considerMinMaxWidth(pNode, iContaining, &sContent.width);
+
+    sBox.iContaining = iContaining;
+    wrapContent(pLayout, &sBox, &sContent, pNode);
+
+    y = HtmlFloatListPlace(
+        pFloat, pBox->iContaining, sBox.width, sBox.height, *pY
+    );
+    *pY = y + sBox.height;
+    HtmlFloatListMargins(pFloat, y, *pY, &iLeftFloat, &iRightFloat);
+
+    x = iLeftFloat + doHorizontalBlockAlign(
+        pLayout, pNode, &margin, iRightFloat - iLeftFloat - sBox.width
+    );
+    x = MAX(0, x);
+
+    DRAW_CANVAS(&pBox->vc, &sBox.vc, x, y, pNode);
+    pBox->height = MAX(pBox->height, *pY);
+    pBox->width = MAX(pBox->width, x + sBox.width);
+
+    /* Account for the 'margin-bottom' property of this node. */
+    normalFlowMarginAdd(pLayout, pNode, pNormal, margin.margin_bottom);
+
+    return 0;
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
  * normalFlowLayoutTableComponent --
  *
  *     This function is called when a table-row or table-cell is encountered
@@ -3255,6 +3374,7 @@ normalFlowLayoutNode(pLayout, pBox, pNode, pY, pContext, pNormal)
     F( FIXED,           0, 0, normalFlowLayoutFixed);
     F( OVERFLOW,        1, 1, normalFlowLayoutOverflow);
     F( TABLE_COMPONENT, 0, 0, normalFlowLayoutTableComponent);
+    F( FLEX,            1, 1, normalFlowLayoutFlex);
     #undef F
 
     /* 
@@ -3292,6 +3412,7 @@ normalFlowLayoutNode(pLayout, pBox, pNode, pY, pContext, pNormal)
         } 
     } else if (
         eDisplay == CSS_CONST_INLINE_BLOCK ||
+        eDisplay == CSS_CONST_INLINE_FLEX ||
         eDisplay == CSS_CONST__TKHTML_INLINE_BUTTON
     ) {
         pFlow = &FT_INLINE_BLOCK;
@@ -3306,12 +3427,13 @@ normalFlowLayoutNode(pLayout, pBox, pNode, pY, pContext, pNormal)
         pFlow = &FT_FLOAT;
     } else if (nodeIsReplaced(pNode)) {
         pFlow = &FT_BLOCK_REPLACED;
-    } else if (
-        eDisplay == CSS_CONST_BLOCK || eDisplay == CSS_CONST_LIST_ITEM ||
-        eDisplay == CSS_CONST_FLEX   /* placeholder: block until the
-                                      * flex layout engine lands */
-    ) {
+    } else if (eDisplay == CSS_CONST_BLOCK || eDisplay == CSS_CONST_LIST_ITEM) {
         pFlow = &FT_BLOCK;
+        if (pV->eOverflow != CSS_CONST_VISIBLE) {
+            pFlow = &FT_OVERFLOW;
+        }
+    } else if (eDisplay == CSS_CONST_FLEX) {
+        pFlow = &FT_FLEX;
         if (pV->eOverflow != CSS_CONST_VISIBLE) {
             pFlow = &FT_OVERFLOW;
         }
