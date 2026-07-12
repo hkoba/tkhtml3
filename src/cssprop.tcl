@@ -153,6 +153,8 @@ P border-bottom-right-radius border-bottom-left-radius
 P flex-direction flex-wrap justify-content align-items align-self
 P align-content flex-grow flex-shrink flex-basis order row-gap column-gap
 
+P box-shadow
+
 P -tkhtml-replacement-image
 P -tkhtml-ordered-list-start
 P -tkhtml-ordered-list-value

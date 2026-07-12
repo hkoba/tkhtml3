@@ -277,6 +277,14 @@ struct HtmlComputedValues {
     int iOutlineWidth;                /* 'outline-width' (pixels) */
     HtmlColor *cOutlineColor;         /* 'outline-color' */
 
+    /* 'box-shadow' (single outer shadow, blur radius parsed but
+     * rendered sharp; see roadmap.md). cBoxShadowColor == NULL means
+     * no shadow. */
+    HtmlColor *cBoxShadowColor;
+    int iBoxShadowX;                  /* horizontal offset (pixels) */
+    int iBoxShadowY;                  /* vertical offset (pixels) */
+    int iBoxShadowSpread;             /* spread distance (pixels) */
+
     HtmlImage2 *imBackgroundImage;        /* 'background-image' */
     unsigned char eBackgroundRepeat;      /* 'background-repeat' */
     unsigned char eBackgroundAttachment;  /* 'background-attachment' */

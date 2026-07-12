@@ -54,7 +54,8 @@
 #                 percentage; % + relative units still fall back.
 #
 #     modern-14.* Options-menu items (roadmap): the 'outline'
-#                 shorthand (previously dead-stored) + :focus.
+#                 shorthand (previously dead-stored) + :focus;
+#                 box-shadow (single outer shadow, sharp).
 #
 # Note: when testing with properties, prefer 'color' - the initial value
 # of e.g. 'border-top-width' is "medium" (2px), which is easy to confuse
@@ -1075,5 +1076,42 @@ tcltest::test modern-14.1 {outline via :focus dynamic condition} -body {
   update idletasks
   list $before [property $n outline-style] [property $n outline-color]
 } -result {none solid green}
+
+tcltest::test modern-14.2 {box-shadow parses offsets, spread and color} -body {
+  .h reset
+  .h style {
+    #a { box-shadow: 10px 10px gray }
+    #b { box-shadow: 4px 4px 8px 2px red }
+    #c { color: blue; box-shadow: 5px 5px }
+  }
+  .h parse -final {<body><div id="a">a</div><div id="b">b</div>
+    <div id="c">c</div></body>}
+  # blur (the 3rd length) is parsed but rendered sharp: readback
+  # always reports 0px blur. Omitted color = currentColor.
+  list [property [idnode a] box-shadow] [property [idnode b] box-shadow] \
+       [property [idnode c] box-shadow]
+} -result {{10px 10px 0px 0px gray} {4px 4px 0px 2px red} {5px 5px 0px 0px blue}}
+
+tcltest::test modern-14.3 {unsupported box-shadow forms fall back} -body {
+  .h reset
+  .h style {
+    #a { box-shadow: 3px 3px gray; box-shadow: inset 2px 2px red }
+    #b { box-shadow: 3px 3px gray; box-shadow: 1px 1px red, 2px 2px blue }
+    #c { box-shadow: 3px 3px gray; box-shadow: 1em 1em red }
+  }
+  .h parse -final {<body><div id="a">a</div><div id="b">b</div>
+    <div id="c">c</div></body>}
+  # inset, shadow lists, and non-absolute lengths all invalidate the
+  # declaration so the earlier one applies
+  list [property [idnode a] box-shadow] [property [idnode b] box-shadow] \
+       [property [idnode c] box-shadow]
+} -result {{3px 3px 0px 0px gray} {3px 3px 0px 0px gray} {3px 3px 0px 0px gray}}
+
+tcltest::test modern-14.4 {box-shadow rgba color (white-blend approximation)} -body {
+  .h reset
+  .h style { #a { box-shadow: 4px 4px rgba(0,0,0,0.5) } }
+  .h parse -final {<body><div id="a">a</div></body>}
+  property [idnode a] box-shadow
+} -result {4px 4px 0px 0px #808080}
 
 finish_test

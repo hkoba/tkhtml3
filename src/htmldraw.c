@@ -1102,13 +1102,22 @@ itemToBox(pItem, origin_x, origin_y, pX, pY, pW, pH)
 {
     switch (pItem->type) {
         case CANVAS_BOX: {
+            /* Outlines and box-shadows paint OUTSIDE the border box
+             * without affecting layout; grow the item's bounding box
+             * so damage/repaint calculations cover them. */
             int ow = 0;
-/*
-            HtmlComputedValues *pV = pItem->x.box.pNode->pPropertyValues;
-            if (pV->eOutlineStyle != CSS_CONST_NONE) {
-                ow = MAX(0, pV->iOutlineWidth);
+            HtmlComputedValues *pV =
+                HtmlNodeComputedValues(pItem->x.box.pNode);
+            if (pV) {
+                if (pV->eOutlineStyle != CSS_CONST_NONE) {
+                    ow = MAX(0, pV->iOutlineWidth);
+                }
+                if (pV->cBoxShadowColor) {
+                    int iExtent = pV->iBoxShadowSpread +
+                        MAX(abs(pV->iBoxShadowX), abs(pV->iBoxShadowY));
+                    ow = MAX(ow, iExtent);
+                }
             }
-*/
             *pX = pItem->x.box.x + origin_x - ow;
             *pY = pItem->x.box.y + origin_y - ow;
             *pW = pItem->x.box.w + ow + ow;
@@ -2120,6 +2129,38 @@ drawBox(pQuery, pItem, pBox, drawable, x, y, w, h, xview, yview, flags)
     }
     if (pBox->flags & CANVAS_BOX_OPEN_RIGHT) {
         rw = 0;
+    }
+
+    /* CSS3 'box-shadow': a filled rectangle behind the box, offset by
+     * (iBoxShadowX, iBoxShadowY) and inflated by the spread distance.
+     * The blur radius renders sharp (no per-pixel convolution - see
+     * agent_docs/roadmap.md). Follows the box's rounded corners. */
+    if (
+        pV->cBoxShadowColor && pV->cBoxShadowColor->xcolor &&
+        0 == (flags & DRAWBOX_NOBACKGROUND) &&
+        0 == (pBox->flags & (CANVAS_BOX_OPEN_LEFT|CANVAS_BOX_OPEN_RIGHT))
+    ) {
+        int sx = x + pBox->x + pV->iBoxShadowX - pV->iBoxShadowSpread;
+        int sy = y + pBox->y + pV->iBoxShadowY - pV->iBoxShadowSpread;
+        int sw = pBox->w + 2 * pV->iBoxShadowSpread;
+        int sh = pBox->h + 2 * pV->iBoxShadowSpread;
+        if (sw > 0 && sh > 0) {
+            if (pV->iBorderTopLeftRadius > 0 ||
+                pV->iBorderTopRightRadius > 0 ||
+                pV->iBorderBottomRightRadius > 0 ||
+                pV->iBorderBottomLeftRadius > 0
+            ) {
+                fill_round_rectangle(pTree->tkwin, drawable,
+                    pV->cBoxShadowColor->xcolor, sx, sy, sw, sh,
+                    pV->iBorderTopLeftRadius, pV->iBorderTopRightRadius,
+                    pV->iBorderBottomRightRadius, pV->iBorderBottomLeftRadius
+                );
+            } else {
+                fill_rectangle(pTree->tkwin, drawable,
+                    pV->cBoxShadowColor->xcolor, sx, sy, sw, sh
+                );
+            }
+        }
     }
 
     /* CSS3 'border-radius' support: if the box has a rounded corner

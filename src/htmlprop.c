@@ -197,6 +197,7 @@ static PropertyDef propdef[] = {
   PROPDEF(CUSTOM, FLEX_GROW,                 iFlexGrow),
   PROPDEF(CUSTOM, FLEX_SHRINK,               iFlexShrink),
   PROPDEF(CUSTOM, ORDER,                     iOrder),
+  PROPDEF(CUSTOM, BOX_SHADOW,                iBoxShadowX),
 
   PROPDEF(CUSTOM, FONT_SIZE,                 fFont),
   PROPDEF(CUSTOM, FONT_WEIGHT,               fFont),
@@ -265,6 +266,7 @@ static int propertyValuesSetContent(HtmlComputedValuesCreator*,CssProperty*);
 static int propertyValuesSetFlexGrow(HtmlComputedValuesCreator*,CssProperty*);
 static int propertyValuesSetFlexShrink(HtmlComputedValuesCreator*,CssProperty*);
 static int propertyValuesSetOrder(HtmlComputedValuesCreator*,CssProperty*);
+static int propertyValuesSetBoxShadow(HtmlComputedValuesCreator*,CssProperty*);
 
 static int 
 propertyValuesSetAutoInteger(HtmlComputedValuesCreator*,CssProperty*,int *);
@@ -281,6 +283,7 @@ static Tcl_Obj *propertyValuesObjContent(HtmlComputedValues*);
 static Tcl_Obj *propertyValuesObjFlexGrow(HtmlComputedValues*);
 static Tcl_Obj *propertyValuesObjFlexShrink(HtmlComputedValues*);
 static Tcl_Obj *propertyValuesObjOrder(HtmlComputedValues*);
+static Tcl_Obj *propertyValuesObjBoxShadow(HtmlComputedValues*);
 
 #define CUSTOMDEF(x, y) {x, propertyValuesSet ## y, propertyValuesObj ## y}
 static struct CustomDef {
@@ -298,6 +301,7 @@ static struct CustomDef {
   CUSTOMDEF(CSS_PROPERTY_FLEX_GROW,      FlexGrow),
   CUSTOMDEF(CSS_PROPERTY_FLEX_SHRINK,    FlexShrink),
   CUSTOMDEF(CSS_PROPERTY_ORDER,          Order),
+  CUSTOMDEF(CSS_PROPERTY_BOX_SHADOW,     BoxShadow),
 };
 
 static int inheritlist[] = {
@@ -326,7 +330,8 @@ static int nolayoutlist[] = {
     CSS_PROPERTY_BORDER_TOP_LEFT_RADIUS,
     CSS_PROPERTY_BORDER_TOP_RIGHT_RADIUS,
     CSS_PROPERTY_BORDER_BOTTOM_RIGHT_RADIUS,
-    CSS_PROPERTY_BORDER_BOTTOM_LEFT_RADIUS
+    CSS_PROPERTY_BORDER_BOTTOM_LEFT_RADIUS,
+    CSS_PROPERTY_BOX_SHADOW
 };
 
 
@@ -2155,7 +2160,7 @@ propertyValuesSetBorderWidth(p, pIVal, em_mask, pProp)
             return 0;
     }
 
-    /* If it is not one of the above keywords, then the border-width may 
+    /* If it is not one of the above keywords, then the border-width may
      * be expressed as a CSS <length>.
      */
     if (0 == propertyValuesSetLength(p, pIVal, em_mask, pProp, 0)) {
@@ -2164,6 +2169,144 @@ propertyValuesSetBorderWidth(p, pIVal, em_mask, pProp)
 
     /* Not one of the keywords or a length -> type-mismatch error */
     return 1;
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
+ * propertyValuesSetBoxShadow --
+ *
+ *     Parse a 'box-shadow' value: a single outer shadow of the form
+ *
+ *         <x-offset> <y-offset> [<blur> [<spread>]] || <color>
+ *
+ *     with the color on either side of the lengths. The blur radius
+ *     is parsed but rendered sharp (no per-pixel convolution - see
+ *     roadmap.md). Unsupported forms - 'inset', comma-separated
+ *     shadow lists, non-absolute lengths - are a type mismatch, so
+ *     the declaration is invalidated and the cascade falls back.
+ *     An omitted color means 'currentColor', per spec.
+ *
+ * Results:
+ *     0 if the value is successfully set, 1 on type mismatch.
+ *
+ *---------------------------------------------------------------------------
+ */
+static int
+propertyValuesSetBoxShadow(p, pProp)
+    HtmlComputedValuesCreator *p;
+    CssProperty *pProp;
+{
+    const char *zText;
+    const char *z;
+    const char *zEnd;
+    int aLen[4];
+    int nLen = 0;
+    CssProperty *pColor = 0;
+    int rc = 1;
+
+    switch (pProp->eType) {
+        case CSS_CONST_NONE:
+            /* The prototype state is already "no shadow"; this only
+             * matters when overriding an inherited value. */
+            if (p->values.cBoxShadowColor) {
+                decrementColorRef(p->pTree, p->values.cBoxShadowColor);
+                p->values.cBoxShadowColor = 0;
+            }
+            p->values.iBoxShadowX = 0;
+            p->values.iBoxShadowY = 0;
+            p->values.iBoxShadowSpread = 0;
+            return 0;
+
+        case CSS_CONST_INHERIT: {
+            HtmlComputedValues *pPV = HtmlNodeComputedValues(p->pParent);
+            if (pPV) {
+                p->values.iBoxShadowX = pPV->iBoxShadowX;
+                p->values.iBoxShadowY = pPV->iBoxShadowY;
+                p->values.iBoxShadowSpread = pPV->iBoxShadowSpread;
+                p->values.cBoxShadowColor = pPV->cBoxShadowColor;
+                if (p->values.cBoxShadowColor) {
+                    p->values.cBoxShadowColor->nRef++;
+                }
+            }
+            return 0;
+        }
+    }
+
+    zText = HtmlCssPropertyGetString(pProp);
+    if (!zText) return 1;
+
+    /* A top-level comma means a list of shadows: unsupported. Commas
+     * inside function parentheses (rgba(...)) are fine. */
+    {
+        const char *zScan;
+        int nParen = 0;
+        for (zScan = zText; *zScan; zScan++) {
+            if (*zScan == '(') nParen++;
+            else if (*zScan == ')') nParen--;
+            else if (*zScan == ',' && nParen == 0) return 1;
+        }
+    }
+
+    z = zText;
+    zEnd = z + strlen(zText);
+    while (z) {
+        int n;
+        z = HtmlCssGetNextListItem(z, zEnd - z, &n);
+        if (z) {
+            CssProperty *pItem = HtmlCssStringToProperty(z, n);
+            int iVal;
+            if (
+                nLen < 4 && pItem->eType != CSS_TYPE_RAW &&
+                0 == propertyValuesSetLength(p, &iVal, 0, pItem, 1)
+            ) {
+                aLen[nLen++] = iVal;
+                HtmlFree(pItem);
+            } else if (pItem->eType == CSS_CONST_INSET) {
+                HtmlFree(pItem);
+                goto shadow_out;               /* inset: unsupported */
+            } else if (!pColor) {
+                pColor = pItem;                /* Color candidate */
+            } else {
+                HtmlFree(pItem);
+                goto shadow_out;
+            }
+            z += n;
+        }
+    }
+
+    if (nLen < 2) goto shadow_out;
+
+    if (!pColor) {
+        pColor = HtmlCssStringToProperty("currentColor", -1);
+    }
+    if (propertyValuesSetColor(p, &p->values.cBoxShadowColor, pColor)) {
+        goto shadow_out;
+    }
+
+    p->values.iBoxShadowX = aLen[0];
+    p->values.iBoxShadowY = aLen[1];
+    /* aLen[2] is the blur radius: parsed, rendered sharp. */
+    p->values.iBoxShadowSpread = (nLen > 3) ? aLen[3] : 0;
+    rc = 0;
+
+shadow_out:
+    if (pColor) HtmlFree(pColor);
+    return rc;
+}
+
+static Tcl_Obj *
+propertyValuesObjBoxShadow(p)
+    HtmlComputedValues *p;
+{
+    char zBuf[128];
+    if (!p->cBoxShadowColor) {
+        return Tcl_NewStringObj("none", -1);
+    }
+    sprintf(zBuf, "%dpx %dpx 0px %dpx %s",
+        p->iBoxShadowX, p->iBoxShadowY, p->iBoxShadowSpread,
+        p->cBoxShadowColor->zColor ? p->cBoxShadowColor->zColor : "?");
+    return Tcl_NewStringObj(zBuf, -1);
 }
 
 /*
@@ -2348,6 +2491,7 @@ HtmlComputedValuesInit(pTree, pNode, pParent, p)
     assert(!p->values.cBorderBottomColor);
     assert(!p->values.cBorderLeftColor);
     assert(!p->values.cOutlineColor);
+    assert(!p->values.cBoxShadowColor);
 }
 
 /*
@@ -2966,6 +3110,7 @@ HtmlComputedValuesFinish(p)
             &p->values.cBorderBottomColor,
             &p->values.cBorderLeftColor,
             &p->values.cOutlineColor,
+            &p->values.cBoxShadowColor,
         };
         int iCC;
         for (iCC = 0; iCC < (int)(sizeof(apCC)/sizeof(apCC[0])); iCC++) {
@@ -3150,6 +3295,7 @@ HtmlComputedValuesFinish(p)
         pValues->cBorderBottomColor->nRef--;
         pValues->cBorderLeftColor->nRef--;
         pValues->cOutlineColor->nRef--;
+        if (pValues->cBoxShadowColor) pValues->cBoxShadowColor->nRef--;
         assert(pValues->fFont->nRef > 0);
         assert(pValues->cColor->nRef > 0);
         assert(pValues->cBackgroundColor->nRef > 0);
@@ -3158,6 +3304,7 @@ HtmlComputedValuesFinish(p)
         assert(pValues->cBorderBottomColor->nRef > 0);
         assert(pValues->cBorderLeftColor->nRef > 0);
         assert(pValues->cOutlineColor->nRef > 0);
+        assert(!pValues->cBoxShadowColor||pValues->cBoxShadowColor->nRef > 0);
         HtmlImageFree(pValues->imReplacementImage);
         HtmlImageFree(pValues->imBackgroundImage);
         HtmlImageFree(pValues->imListStyleImage);
@@ -3308,6 +3455,9 @@ HtmlComputedValuesRelease(pTree, pValues)
             decrementColorRef(pTree, pValues->cBorderBottomColor);
             decrementColorRef(pTree, pValues->cBorderLeftColor);
             decrementColorRef(pTree, pValues->cOutlineColor);
+            if (pValues->cBoxShadowColor) {
+                decrementColorRef(pTree, pValues->cBoxShadowColor);
+            }
             HtmlImageFree(pValues->imReplacementImage);
             HtmlImageFree(pValues->imBackgroundImage);
             HtmlImageFree(pValues->imZoomedBackgroundImage);
