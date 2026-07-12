@@ -329,16 +329,24 @@ parse_as_token:
 
             if( i==0 ) goto bad_token;
             if( i<n && z[i]=='(' ){
+                /* Scan to the matching ')' - parentheses nest, e.g.
+                 * "calc((1px + 2px) * 3)" or a var() fallback that
+                 * itself contains a function. */
                 CssInput sInput;
+                int nNest;
                 memset(&sInput, 0, sizeof(CssInput));
                 sInput.zInput = (char *)(&z[i]);
                 sInput.nInput = n - i;
 
                 inputNextToken(&sInput);
                 eToken = inputGetToken(&sInput, 0, 0);
-                while (eToken != CT_RRP && eToken != CT_EOF) {
+                if (eToken != CT_LRP) goto bad_token;
+                nNest = 1;
+                while (nNest > 0 && eToken != CT_EOF) {
                     inputNextToken(&sInput);
                     eToken = inputGetToken(&sInput, 0, 0);
+                    if (eToken == CT_LRP) nNest++;
+                    if (eToken == CT_RRP) nNest--;
                 }
                 if( eToken!=CT_RRP ) goto bad_token;
                 nToken = sInput.iInput + i;

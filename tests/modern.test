@@ -30,6 +30,11 @@
 #
 #     modern-9.*  Viewport units vw/vh/vmin/vmax.
 #
+#     modern-10.* calc() stage 1: same-unit folding, absolute-unit
+#                 folding, * and / by numbers, nesting. Percentages and
+#                 mixed relative units invalidate the declaration (the
+#                 cascade falls back).
+#
 # Note: when testing with properties, prefer 'color' - the initial value
 # of e.g. 'border-top-width' is "medium" (2px), which is easy to confuse
 # with a test value.
@@ -588,5 +593,48 @@ tcltest::test modern-9.1 {viewport units track resizes} -body {
   update
   set r
 } -result {300px 30px}
+
+#--------------------------------------------------------------------------
+# modern-10.*: calc() stage 1.
+#
+tcltest::test modern-10.0 {calc arithmetic} -body {
+  .h reset
+  .h style {
+    html { font-size: 10px }
+    #a { width: calc(100px + 50px); display: block }
+    #b { width: calc(10rem / 2); display: block }
+    #c { width: calc((10px + 20px) * 3); display: block }
+    #d { width: calc(2 * 3rem); display: block }
+    #e { width: calc(1in); display: block }
+    #f { margin-left: calc(20px - 30px); display: block }
+  }
+  .h parse -final {<html><body>
+    <div id="a">a</div><div id="b">b</div><div id="c">c</div>
+    <div id="d">d</div><div id="e">e</div><div id="f">f</div>
+  </body></html>}
+  list [property [idnode a] width] [property [idnode b] width] \
+       [property [idnode c] width] [property [idnode d] width] \
+       [property [idnode e] width] [property [idnode f] margin-left]
+} -result {150px 50px 90px 60px 96px -10px}
+
+tcltest::test modern-10.1 {unsupported calc invalidates, cascade falls back} -body {
+  .h reset
+  .h style {
+    #a { width: 77px; width: calc(100% - 20px); display: block }
+    #b { width: 88px; width: calc(1em + 5px); display: block }
+  }
+  .h parse -final {<body><div id="a">a</div><div id="b">b</div></body>}
+  list [property [idnode a] width] [property [idnode b] width]
+} -result {77px 88px}
+
+tcltest::test modern-10.2 {var() inside calc} -body {
+  .h reset
+  .h style {
+    :root { --gap: 8px }
+    #j { width: calc(var(--gap) * 4); display: block }
+  }
+  .h parse -final {<body><div id="j">x</div></body>}
+  property [idnode j] width
+} -result {32px}
 
 finish_test

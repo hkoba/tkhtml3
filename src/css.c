@@ -684,6 +684,222 @@ doUrlCmd(pParse, zArg, nArg)
  *
  *---------------------------------------------------------------------------
  */
+/*--------------------------------------------------------------------------
+ * calc() - stage 1 (see agent_docs/roadmap.md).
+ *
+ * A calc() expression is evaluated at parse time into a single
+ * unit-tagged value: all absolute units fold to px using the CSS-fixed
+ * ratios (1in = 96px, 1pt = 4/3px, ...), and same-unit relative terms
+ * fold together (calc(1rem + 0.5rem) -> 1.5rem). The result becomes an
+ * ordinary length property, so em/rem/vw results keep their deferred
+ * resolution behaviour.
+ *
+ * Out of scope (the expression is then rejected, which invalidates the
+ * declaration and lets the cascade fall back): percentages, and mixing
+ * different relative units (calc(1em + 2px)). Note that var()
+ * references inside calc() DO work: substitution happens textually
+ * before the declaration is re-parsed.
+ *--------------------------------------------------------------------------
+ */
+typedef struct CalcValue CalcValue;
+struct CalcValue {
+    double r;
+    int eUnit;         /* CSS_TYPE_FLOAT for a bare number, else a
+                        * length CSS_TYPE_* (absolutes already px) */
+};
+
+static int calcExpr(const char **, const char *, CalcValue *, int);
+
+static void
+calcSkipSpace(pz, zEnd)
+    const char **pz;
+    const char *zEnd;
+{
+    while (*pz < zEnd && isspace((unsigned char)**pz)) (*pz)++;
+}
+
+static int
+calcFactor(pz, zEnd, pRes, nDepth)
+    const char **pz;
+    const char *zEnd;
+    CalcValue *pRes;
+    int nDepth;
+{
+    const char *z;
+    calcSkipSpace(pz, zEnd);
+    z = *pz;
+    if (z >= zEnd) return 1;
+
+    if (*z == '(' ||
+        (zEnd-z > 5 && 0 == strnicmp(z, "calc(", 5))
+    ) {
+        *pz = (*z == '(') ? &z[1] : &z[5];
+        if (calcExpr(pz, zEnd, pRes, nDepth + 1)) return 1;
+        calcSkipSpace(pz, zEnd);
+        if (*pz >= zEnd || **pz != ')') return 1;
+        (*pz)++;
+        return 0;
+    }
+
+    {
+        char zBuf[64];
+        char *zNumEnd;
+        int nCopy = MIN((int)(zEnd - z), (int)sizeof(zBuf) - 1);
+        const char *zUnit;
+        int nUnit;
+
+        memcpy(zBuf, z, nCopy);
+        zBuf[nCopy] = '\0';
+        pRes->r = strtod(zBuf, &zNumEnd);
+        if (zNumEnd == zBuf) return 1;
+        *pz = &z[zNumEnd - zBuf];
+
+        /* Optional unit (letters or '%') directly after the number */
+        zUnit = *pz;
+        while (*pz < zEnd &&
+            (isalpha((unsigned char)**pz) || **pz == '%')) (*pz)++;
+        nUnit = *pz - zUnit;
+
+        if (nUnit == 0) {
+            pRes->eUnit = CSS_TYPE_FLOAT;
+        } else if (nUnit == 2 && !strnicmp(zUnit, "px", 2)) {
+            pRes->eUnit = CSS_TYPE_PX;
+        } else if (nUnit == 2 && !strnicmp(zUnit, "pt", 2)) {
+            pRes->eUnit = CSS_TYPE_PX; pRes->r *= 96.0/72.0;
+        } else if (nUnit == 2 && !strnicmp(zUnit, "pc", 2)) {
+            pRes->eUnit = CSS_TYPE_PX; pRes->r *= 16.0;
+        } else if (nUnit == 2 && !strnicmp(zUnit, "in", 2)) {
+            pRes->eUnit = CSS_TYPE_PX; pRes->r *= 96.0;
+        } else if (nUnit == 2 && !strnicmp(zUnit, "cm", 2)) {
+            pRes->eUnit = CSS_TYPE_PX; pRes->r *= 96.0/2.54;
+        } else if (nUnit == 2 && !strnicmp(zUnit, "mm", 2)) {
+            pRes->eUnit = CSS_TYPE_PX; pRes->r *= 96.0/25.4;
+        } else if (nUnit == 2 && !strnicmp(zUnit, "em", 2)) {
+            pRes->eUnit = CSS_TYPE_EM;
+        } else if (nUnit == 2 && !strnicmp(zUnit, "ex", 2)) {
+            pRes->eUnit = CSS_TYPE_EX;
+        } else if (nUnit == 3 && !strnicmp(zUnit, "rem", 3)) {
+            pRes->eUnit = CSS_TYPE_REM;
+        } else if (nUnit == 2 && !strnicmp(zUnit, "vw", 2)) {
+            pRes->eUnit = CSS_TYPE_VW;
+        } else if (nUnit == 2 && !strnicmp(zUnit, "vh", 2)) {
+            pRes->eUnit = CSS_TYPE_VH;
+        } else if (nUnit == 4 && !strnicmp(zUnit, "vmin", 4)) {
+            pRes->eUnit = CSS_TYPE_VMIN;
+        } else if (nUnit == 4 && !strnicmp(zUnit, "vmax", 4)) {
+            pRes->eUnit = CSS_TYPE_VMAX;
+        } else {
+            /* '%' (stage 2) or an unknown unit */
+            return 1;
+        }
+        return 0;
+    }
+}
+
+static int
+calcTerm(pz, zEnd, pRes, nDepth)
+    const char **pz;
+    const char *zEnd;
+    CalcValue *pRes;
+    int nDepth;
+{
+    if (nDepth > 10) return 1;
+    if (calcFactor(pz, zEnd, pRes, nDepth)) return 1;
+
+    while (1) {
+        char op;
+        CalcValue rhs;
+        const char *zSave = *pz;
+        calcSkipSpace(pz, zEnd);
+        if (*pz >= zEnd || (**pz != '*' && **pz != '/')) {
+            /* Not a multiplicative operator: restore the position so
+             * calcExpr() can see the white-space before a + or -. */
+            *pz = zSave;
+            return 0;
+        }
+        op = **pz;
+        (*pz)++;
+        if (calcFactor(pz, zEnd, &rhs, nDepth)) return 1;
+
+        if (op == '*') {
+            /* At least one side must be a bare number */
+            if (pRes->eUnit == CSS_TYPE_FLOAT) {
+                pRes->r *= rhs.r;
+                pRes->eUnit = rhs.eUnit;
+            } else if (rhs.eUnit == CSS_TYPE_FLOAT) {
+                pRes->r *= rhs.r;
+            } else {
+                return 1;
+            }
+        } else {
+            /* Divisor must be a nonzero bare number */
+            if (rhs.eUnit != CSS_TYPE_FLOAT || rhs.r == 0.0) return 1;
+            pRes->r /= rhs.r;
+        }
+    }
+}
+
+static int
+calcExpr(pz, zEnd, pRes, nDepth)
+    const char **pz;
+    const char *zEnd;
+    CalcValue *pRes;
+    int nDepth;
+{
+    if (nDepth > 10) return 1;
+    if (calcTerm(pz, zEnd, pRes, nDepth)) return 1;
+
+    while (1) {
+        char op;
+        CalcValue rhs;
+        const char *zSave = *pz;
+
+        /* CSS requires white-space around the binary + and - */
+        if (*pz >= zEnd || !isspace((unsigned char)**pz)) return 0;
+        calcSkipSpace(pz, zEnd);
+        if (*pz >= zEnd || (**pz != '+' && **pz != '-')) {
+            *pz = zSave;
+            return 0;
+        }
+        op = **pz;
+        (*pz)++;
+        if (*pz >= zEnd || !isspace((unsigned char)**pz)) return 1;
+
+        if (calcTerm(pz, zEnd, &rhs, nDepth)) return 1;
+
+        /* Both bare numbers, or both the same unit */
+        if (pRes->eUnit != rhs.eUnit) return 1;
+        if (op == '+') {
+            pRes->r += rhs.r;
+        } else {
+            pRes->r -= rhs.r;
+        }
+    }
+}
+
+/* z/n is the text between the parens of "calc(...)". Returns a normal
+ * length/number property, or NULL if the expression is not supported.
+ */
+static CssProperty *
+calcToProperty(z, n)
+    const char *z;
+    int n;
+{
+    CalcValue v;
+    const char *p = z;
+    const char *zEnd = &z[n];
+    CssProperty *pProp;
+
+    if (calcExpr(&p, zEnd, &v, 0)) return 0;
+    calcSkipSpace(&p, zEnd);
+    if (p != zEnd) return 0;
+
+    pProp = HtmlNew(CssProperty);
+    pProp->eType = v.eUnit;
+    pProp->v.rVal = v.r;
+    return pProp;
+}
+
 static CssProperty *
 tokenToProperty(pParse, pToken)
     CssParse *pParse;
@@ -750,6 +966,20 @@ tokenToProperty(pParse, pToken)
                 break;
             }
         }
+    }
+
+    /* calc() - evaluated at parse time into a single unit (stage 1,
+     * no percentages, no mixed relative units - see calcToProperty).
+     * An unsupported expression is left alone here: it then falls
+     * through to the generic RAW handling below, whose value is
+     * rejected by every property setter (it contains parentheses), so
+     * the declaration is invalidated and the cascade falls back.
+     * Never turn it into a "successful" empty value - that would eat
+     * the fallback (the gradient-as-URL lesson, see
+     * agent_docs/history-and-pitfalls.md).
+     */
+    if (!pProp && n > 6 && z[n-1] == ')' && 0 == strnicmp(z, "calc(", 5)) {
+        pProp = calcToProperty(&z[5], n - 6);
     }
 
     /* Viewport-unit values are resolved against the window size at
