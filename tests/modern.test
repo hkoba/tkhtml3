@@ -53,6 +53,9 @@
 #                 time; pure-percent arithmetic folds to a plain
 #                 percentage; % + relative units still fall back.
 #
+#     modern-14.* Options-menu items (roadmap): the 'outline'
+#                 shorthand (previously dead-stored) + :focus.
+#
 # Note: when testing with properties, prefer 'color' - the initial value
 # of e.g. 'border-top-width' is "medium" (2px), which is easy to confuse
 # with a test value.
@@ -1041,5 +1044,36 @@ tcltest::test modern-13.7 {% with non-absolute units still falls back} -body {
   list [property [idnode a] width] [property [idnode b] width] \
        [property [idnode c] width]
 } -result {111px 122px 133px}
+
+#--------------------------------------------------------------------------
+# modern-14.*: options-menu items.
+#
+tcltest::test modern-14.0 {outline shorthand expands} -body {
+  .h reset
+  .h style {
+    #a { outline: 3px solid red }
+    #b { outline: blue dotted }
+  }
+  .h parse -final {<body><div id="a">a</div><div id="b">b</div></body>}
+  list [property [idnode a] outline-width] \
+       [property [idnode a] outline-style] \
+       [property [idnode a] outline-color] \
+       [property [idnode b] outline-width] \
+       [property [idnode b] outline-style] \
+       [property [idnode b] outline-color]
+} -result {3px solid red 2px dotted blue}
+
+tcltest::test modern-14.1 {outline via :focus dynamic condition} -body {
+  .h reset
+  .h style {
+    #c:focus { outline: 2px solid green }
+  }
+  .h parse -final {<body><div id="c">c</div></body>}
+  set n [idnode c]
+  set before [property $n outline-style]
+  $n dynamic set focus
+  update idletasks
+  list $before [property $n outline-style] [property $n outline-color]
+} -result {none solid green}
 
 finish_test

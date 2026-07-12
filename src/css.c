@@ -2748,6 +2748,99 @@ static void propertySetAddShortcutBorderColor(p, prop, v)
 /*
  *---------------------------------------------------------------------------
  *
+ * propertySetAddShortcutOutline --
+ *
+ *     Expand 'outline: <width> || <style> || <color>' (any order).
+ *     Until 2026 this shorthand fell through to a dead raw store (see
+ *     history-and-pitfalls.md); outline-width/style/color themselves
+ *     have always been live, and htmldraw.c renders them. An omitted
+ *     color becomes -tkhtml-no-color, which
+ *     HtmlComputedValuesFinish() defaults to the computed 'color' -
+ *     the practical approximation of CSS2's "invert".
+ *
+ *---------------------------------------------------------------------------
+ */
+static void
+propertySetAddShortcutOutline(pParse, p, v)
+    CssParse *pParse;
+    CssPropertySet *p;         /* Property set. */
+    CssToken *v;               /* Value for property. */
+{
+    const char *z = v->z;
+    const char *zEnd = z + v->n;
+
+    CssProperty *pColor = 0;
+    CssProperty *pStyle = 0;
+    CssProperty *pWidth = 0;
+
+    while (z) {
+        int n;
+        z = HtmlCssGetNextListItem(z, zEnd-z, &n);
+        if (z) {
+            CssToken token;
+            CssProperty *pProp;
+            int eType;
+
+            token.z = z;
+            token.n = n;
+            pProp = tokenToProperty(0, &token);
+            eType = pProp->eType;
+
+            if (propertyIsLength(pParse, pProp) || eType == CSS_CONST_THIN ||
+                eType == CSS_CONST_THICK        || eType == CSS_CONST_MEDIUM
+            ) {
+                if (pWidth) {
+                    HtmlFree(pProp);
+                    goto parse_error;
+                }
+                pWidth = pProp;
+            } else if (
+                eType == CSS_CONST_NONE   || eType == CSS_CONST_HIDDEN ||
+                eType == CSS_CONST_DOTTED || eType == CSS_CONST_DASHED ||
+                eType == CSS_CONST_SOLID  || eType == CSS_CONST_DOUBLE ||
+                eType == CSS_CONST_GROOVE || eType == CSS_CONST_RIDGE  ||
+                eType == CSS_CONST_OUTSET || eType == CSS_CONST_INSET
+            ) {
+                if (pStyle) {
+                    HtmlFree(pProp);
+                    goto parse_error;
+                }
+                pStyle = pProp;
+            } else {
+                if (pColor) {
+                    HtmlFree(pProp);
+                    goto parse_error;
+                }
+                pColor = pProp;
+            }
+            z += n;
+        }
+    }
+
+    if (!pColor) {
+        pColor = HtmlCssStringToProperty("-tkhtml-no-color", -1);
+    }
+    if (!pWidth) {
+        pWidth = HtmlCssStringToProperty("medium", -1);
+    }
+    if (!pStyle) {
+        pStyle = HtmlCssStringToProperty("none", -1);
+    }
+
+    propertySetAdd(p, CSS_PROPERTY_OUTLINE_COLOR, pColor);
+    propertySetAdd(p, CSS_PROPERTY_OUTLINE_WIDTH, pWidth);
+    propertySetAdd(p, CSS_PROPERTY_OUTLINE_STYLE, pStyle);
+    return;
+
+  parse_error:
+    HtmlFree(pColor);
+    HtmlFree(pStyle);
+    HtmlFree(pWidth);
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
  * flexLiteralProperty --
  *
  *     Synthesize a CssProperty from a literal value string ("0", "1",
@@ -3644,6 +3737,9 @@ HtmlCssDeclaration(pParse, pProp, pExpr, isImportant)
         case CSS_SHORTCUTPROPERTY_MARGIN:
         case CSS_SHORTCUTPROPERTY_BORDER_RADIUS:
             propertySetAddShortcutBorderColor(*ppPropertySet, prop, pExpr);
+            break;
+        case CSS_SHORTCUTPROPERTY_OUTLINE:
+            propertySetAddShortcutOutline(pParse, *ppPropertySet, pExpr);
             break;
         case CSS_SHORTCUTPROPERTY_BACKGROUND:
             shortcutBackground(pParse, *ppPropertySet, pExpr);
