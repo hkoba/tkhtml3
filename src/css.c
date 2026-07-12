@@ -2785,6 +2785,84 @@ propertySetAddShortcutFlex(p, v)
 /*
  *---------------------------------------------------------------------------
  *
+ * propertySetAddShortcutFlexFlow --
+ *
+ *     Expand 'flex-flow: <flex-direction> || <flex-wrap>' (1-2 items
+ *     in either order). An omitted longhand is reset to its initial
+ *     value, per the usual shorthand semantics.
+ *
+ *---------------------------------------------------------------------------
+ */
+static void
+propertySetAddShortcutFlexFlow(p, v)
+    CssPropertySet *p;         /* Property set. */
+    CssToken *v;               /* Shorthand value. */
+{
+    const char *z = v->z;
+    const char *zEnd = z + v->n;
+    int n;
+    int i = 0;
+    int j;
+    CssProperty *apProp[3];
+    CssProperty *pDir = 0;
+    CssProperty *pWrap = 0;
+
+    memset(apProp, 0, sizeof(apProp));
+    while (z && i < 3) {
+        z = HtmlCssGetNextListItem(z, zEnd-z, &n);
+        if (z) {
+            CssToken token;
+            token.z = z;
+            token.n = n;
+            apProp[i] = tokenToProperty(0, &token);
+            i++;
+            z += n;
+        }
+    }
+    if (i < 1 || i > 2) {
+        for (j = 0; j < i; j++) HtmlFree(apProp[j]);
+        return;
+    }
+
+    if (i == 1 && apProp[0]->eType == CSS_CONST_INHERIT) {
+        propertySetAdd(p, CSS_PROPERTY_FLEX_DIRECTION, apProp[0]);
+        propertySetAdd(p, CSS_PROPERTY_FLEX_WRAP, propertyDup(apProp[0]));
+        return;
+    }
+
+    for (j = 0; j < i; j++) {
+        switch (apProp[j]->eType) {
+            case CSS_CONST_ROW:
+            case CSS_CONST_ROW_REVERSE:
+            case CSS_CONST_COLUMN:
+            case CSS_CONST_COLUMN_REVERSE:
+                if (pDir) goto flow_error;
+                pDir = apProp[j];
+                break;
+            case CSS_CONST_NOWRAP:
+            case CSS_CONST_WRAP:
+            case CSS_CONST_WRAP_REVERSE:
+                if (pWrap) goto flow_error;
+                pWrap = apProp[j];
+                break;
+            default:
+                goto flow_error;
+        }
+    }
+    if (!pDir) pDir = flexLiteralProperty("row");
+    if (!pWrap) pWrap = flexLiteralProperty("nowrap");
+    propertySetAdd(p, CSS_PROPERTY_FLEX_DIRECTION, pDir);
+    propertySetAdd(p, CSS_PROPERTY_FLEX_WRAP, pWrap);
+    return;
+
+flow_error:
+    for (j = 0; j < i; j++) HtmlFree(apProp[j]);
+    return;
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
  * propertySetAddShortcutGap --
  *
  *     Expand 'gap: <row-gap> [<column-gap>]'. A single value sets
@@ -3508,6 +3586,9 @@ HtmlCssDeclaration(pParse, pProp, pExpr, isImportant)
             break;
         case CSS_SHORTCUTPROPERTY_FLEX:
             propertySetAddShortcutFlex(*ppPropertySet, pExpr);
+            break;
+        case CSS_SHORTCUTPROPERTY_FLEX_FLOW:
+            propertySetAddShortcutFlexFlow(*ppPropertySet, pExpr);
             break;
         case CSS_SHORTCUTPROPERTY_GAP:
             propertySetAddShortcutGap(*ppPropertySet, pExpr);

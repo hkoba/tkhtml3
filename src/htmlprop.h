@@ -285,9 +285,11 @@ struct HtmlComputedValues {
      * item: eAlignSelf, iFlexGrow..iOrder). Grow/shrink factors are
      * stored as the specified number * 100. */
     unsigned char eFlexDirection;     /* 'flex-direction' */
+    unsigned char eFlexWrap;          /* 'flex-wrap' */
     unsigned char eJustifyContent;    /* 'justify-content' */
     unsigned char eAlignItems;        /* 'align-items' */
     unsigned char eAlignSelf;         /* 'align-self' */
+    unsigned char eAlignContent;      /* 'align-content' */
     int iFlexGrow;                    /* 'flex-grow'   (value * 100) */
     int iFlexShrink;                  /* 'flex-shrink' (value * 100) */
     int iFlexBasis;                   /* 'flex-basis'  (pixels, %, AUTO) */
