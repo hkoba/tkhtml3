@@ -88,6 +88,13 @@ typedef unsigned int u32;
 #define CSS_PSEUDOCLASS_HOVER            27
 #define CSS_PSEUDOCLASS_FOCUS            28
 #define CSS_PSEUDOCLASS_NTHCHILD         47   /* :nth-child(an+b), zValue = "a b" */
+#define CSS_PSEUDOCLASS_ROOT             48
+#define CSS_PSEUDOCLASS_EMPTY            49
+#define CSS_PSEUDOCLASS_ONLYCHILD        50
+#define CSS_PSEUDOCLASS_FIRSTOFTYPE      51
+#define CSS_PSEUDOCLASS_LASTOFTYPE       52
+#define CSS_PSEUDOCLASS_NTHOFTYPE        53   /* :nth-of-type(an+b), zValue = "a b" */
+#define CSS_PSEUDOCLASS_NTHLASTCHILD     54   /* :nth-last-child(an+b), zValue = "a b" */
 
 /*
 ** Pseudo-elements.
@@ -136,6 +143,7 @@ struct CssToken {
  */
 struct CssSelector {
     u8 isDynamic;     /* True if this selector is dynamic */
+    u8 isNot;         /* True if wrapped in :not(...) - match is negated */
     u8 eSelector;     /* CSS_SELECTOR* or CSS_PSEUDO* value */
     char *zAttr;      /* The attribute queried, if any. */
     char *zValue;     /* The value tested for, if any. */

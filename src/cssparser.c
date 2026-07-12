@@ -589,6 +589,204 @@ parseNthChildArgs(z, n, pA, pB)
 /*
  *---------------------------------------------------------------------------
  *
+ * parseAttrSelector --
+ *
+ *     Parse an attribute selector - "[attr]", "[attr=value]" and the
+ *     ~=, |=, *=, ^= and $= variants. When this is called the opening
+ *     "[" token has already been consumed. On success the closing "]"
+ *     has been consumed and the selector added via HtmlCssSelector().
+ *
+ * Results:
+ *     Zero on success, non-zero on a parse error.
+ *
+ *---------------------------------------------------------------------------
+ */
+static int parseAttrSelector(pInput, pParse)
+    CssInput *pInput;
+    CssParse *pParse;
+{
+    CssToken t1;
+    CssToken t2;
+    CssTokenType eToken;
+    CssTokenType eNext;
+
+    if (CT_SPACE == inputGetToken(pInput, 0, 0)) inputNextToken(pInput);
+
+    eToken = inputGetToken(pInput, &t1.z, &t1.n);
+    if (eToken != CT_IDENT) return 1;
+
+    inputNextToken(pInput);
+    eToken = inputGetToken(pInput, 0, 0);
+    if (eToken == CT_SPACE) {
+        inputNextToken(pInput);
+        eToken = inputGetToken(pInput, 0, 0);
+    }
+
+    if (eToken == CT_RSP) {
+        HtmlCssSelector(pParse, CSS_SELECTOR_ATTR, &t1, 0);
+    } else if (
+            eToken == CT_TILDE ||
+            eToken == CT_PIPE ||
+            eToken == CT_STAR ||
+            eToken == CT_HAT ||
+            eToken == CT_DOLLAR ||
+            eToken == CT_EQUALS
+    ) {
+        if (eToken == CT_TILDE || eToken == CT_PIPE
+            || eToken == CT_STAR || eToken == CT_HAT
+            || eToken == CT_DOLLAR
+            ) {
+             CssTokenType e;
+             inputNextToken(pInput);
+             e = inputGetToken(pInput, 0, 0);
+             if (e != CT_EQUALS) return 1;
+        }
+        inputNextToken(pInput);
+        if (CT_SPACE == inputGetToken(pInput, 0, 0)) {
+            inputNextToken(pInput);
+        }
+        eNext = inputGetToken(pInput, &t2.z, &t2.n);
+        if (eNext != CT_IDENT && eNext != CT_STRING) {
+            return 1;
+        }
+
+        inputNextToken(pInput);
+        if (CT_SPACE == inputGetToken(pInput, 0, 0)) {
+            inputNextToken(pInput);
+        }
+        eNext = inputGetToken(pInput, 0, 0);
+        if (eNext != CT_RSP) return 1;
+
+        HtmlCssSelector(pParse, (
+            (eToken == CT_TILDE) ? CSS_SELECTOR_ATTRLISTVALUE :
+            (eToken == CT_PIPE)  ? CSS_SELECTOR_ATTRHYPHEN :
+            (eToken == CT_STAR)  ? CSS_SELECTOR_ATTRSTAR :
+            (eToken == CT_HAT)  ? CSS_SELECTOR_ATTRHAT :
+            (eToken == CT_DOLLAR) ? CSS_SELECTOR_ATTREND :
+            CSS_SELECTOR_ATTRVALUE) , &t1, &t2
+        );
+    } else {
+        return 1;
+    }
+    inputNextToken(pInput);
+    return 0;
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
+ * parseNotArgument --
+ *
+ *     Parse the argument of a :not(...) pseudo-class and add it to the
+ *     parse context with the isNot flag set. CSS3 allows exactly one
+ *     simple selector; the supported subset is: a type selector, the
+ *     universal selector, a class, an id, an attribute selector, and
+ *     the :first-child / :last-child pseudo-classes. z/n is the text
+ *     between the parentheses.
+ *
+ * Results:
+ *     Zero on success, non-zero on a parse error.
+ *
+ *---------------------------------------------------------------------------
+ */
+static int
+parseNotArgument(z, n, pParse)
+    const char *z;
+    int n;
+    CssParse *pParse;
+{
+    CssInput sInput;
+    CssTokenType eToken;
+    const char *zT;
+    int nT;
+
+    memset(&sInput, 0, sizeof(CssInput));
+    sInput.zInput = (char *)z;
+    sInput.nInput = n;
+    inputNextToken(&sInput);
+    if (CT_SPACE == inputGetToken(&sInput, 0, 0)) inputNextToken(&sInput);
+
+    eToken = inputGetToken(&sInput, &zT, &nT);
+    inputNextToken(&sInput);
+
+    switch (eToken) {
+        case CT_STAR:
+            HtmlCssSelector(pParse, CSS_SELECTOR_UNIVERSAL, 0, 0);
+            break;
+
+        case CT_IDENT: {
+            CssToken t;
+            t.z = zT;
+            t.n = nT;
+            HtmlCssSelector(pParse, CSS_SELECTOR_TYPE, 0, &t);
+            break;
+        }
+
+        case CT_DOT: {
+            CssToken t;
+            eToken = inputGetToken(&sInput, &t.z, &t.n);
+            if (eToken != CT_IDENT ||
+                (t.z[0] == '-' && t.n > 1 && safe_isdigit(t.z[1])) ||
+                safe_isdigit(t.z[0])
+            ) {
+                return 1;
+            }
+            HtmlCssSelector(pParse, CSS_SELECTOR_CLASS, 0, &t);
+            inputNextToken(&sInput);
+            break;
+        }
+
+        case CT_HASH: {
+            CssToken t;
+            eToken = inputGetToken(&sInput, &t.z, &t.n);
+            if (eToken != CT_IDENT ||
+                (t.z[0] == '-' && t.n > 1 && safe_isdigit(t.z[1])) ||
+                safe_isdigit(t.z[0])
+            ) {
+                return 1;
+            }
+            HtmlCssSelector(pParse, CSS_SELECTOR_ID, 0, &t);
+            inputNextToken(&sInput);
+            break;
+        }
+
+        case CT_LSP: {
+            if (parseAttrSelector(&sInput, pParse)) return 1;
+            break;
+        }
+
+        case CT_COLON: {
+            eToken = inputGetToken(&sInput, &zT, &nT);
+            if (eToken != CT_IDENT) return 1;
+            if (nT == 11 && 0 == strnicmp(zT, "first-child", 11)) {
+                HtmlCssSelector(pParse, CSS_PSEUDOCLASS_FIRSTCHILD, 0, 0);
+            } else if (nT == 10 && 0 == strnicmp(zT, "last-child", 10)) {
+                HtmlCssSelector(pParse, CSS_PSEUDOCLASS_LASTCHILD, 0, 0);
+            } else {
+                return 1;
+            }
+            inputNextToken(&sInput);
+            break;
+        }
+
+        default:
+            return 1;
+    }
+
+    /* Exactly one simple selector is allowed - trailing tokens other
+     * than white-space are a syntax error.  */
+    if (CT_SPACE == inputGetToken(&sInput, 0, 0)) inputNextToken(&sInput);
+    if (CT_EOF != inputGetToken(&sInput, 0, 0)) return 1;
+
+    if (pParse->isIgnore) return 0;
+    if (!pParse->pSelector) return 1;
+    pParse->pSelector->isNot = 1;
+    return 0;
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
  * parseSelector --
  *
  * Results:
@@ -668,14 +866,19 @@ static int parseSelector(pInput, pParse)
                     int eArg;
                     int twocolonsok;
                 } aPseudo[] = {
-                    {"first-child",  CSS_PSEUDOCLASS_FIRSTCHILD, 0}, 
-                    {"last-child",   CSS_PSEUDOCLASS_LASTCHILD, 0}, 
-                    {"link",         CSS_PSEUDOCLASS_LINK, 0}, 
-                    {"visited",      CSS_PSEUDOCLASS_VISITED, 0}, 
-                    {"active",       CSS_PSEUDOCLASS_ACTIVE, 0}, 
-                    {"hover",        CSS_PSEUDOCLASS_HOVER, 0}, 
-                    {"focus",        CSS_PSEUDOCLASS_FOCUS, 0}, 
-                    {"lang",         CSS_PSEUDOCLASS_LANG, 0}, 
+                    {"first-child",  CSS_PSEUDOCLASS_FIRSTCHILD, 0},
+                    {"last-child",   CSS_PSEUDOCLASS_LASTCHILD, 0},
+                    {"link",         CSS_PSEUDOCLASS_LINK, 0},
+                    {"visited",      CSS_PSEUDOCLASS_VISITED, 0},
+                    {"active",       CSS_PSEUDOCLASS_ACTIVE, 0},
+                    {"hover",        CSS_PSEUDOCLASS_HOVER, 0},
+                    {"focus",        CSS_PSEUDOCLASS_FOCUS, 0},
+                    {"lang",         CSS_PSEUDOCLASS_LANG, 0},
+                    {"root",         CSS_PSEUDOCLASS_ROOT, 0},
+                    {"empty",        CSS_PSEUDOCLASS_EMPTY, 0},
+                    {"only-child",   CSS_PSEUDOCLASS_ONLYCHILD, 0},
+                    {"first-of-type", CSS_PSEUDOCLASS_FIRSTOFTYPE, 0},
+                    {"last-of-type", CSS_PSEUDOCLASS_LASTOFTYPE, 0},
 
                     {"after",        CSS_PSEUDOELEMENT_AFTER, 1}, 
                     {"before",       CSS_PSEUDOELEMENT_BEFORE, 1}, 
@@ -691,26 +894,46 @@ static int parseSelector(pInput, pParse)
                     eNext = inputGetToken(pInput, 0, 0);
                 }
                 if (eNext == CT_FUNCTION) {
-                    /* A functional pseudo-class. Only :nth-child(...) is
-                     * supported; the whole "name(arg)" text arrives as a
-                     * single CT_FUNCTION token.
+                    /* A functional pseudo-class. The whole "name(arg)"
+                     * text arrives as a single CT_FUNCTION token.
+                     * Supported: :nth-child(), :nth-of-type(),
+                     * :nth-last-child() and :not().
                      */
                     int a, b;
                     char zBuf[64];
                     CssToken tArg;
+                    int eArg;
+                    int nOff;
                     inputGetToken(pInput, &zToken, &nToken);
-                    if (twocolons ||
-                        nToken < 11 ||
-                        0 != strnicmp(zToken, "nth-child(", 10) ||
-                        zToken[nToken-1] != ')' ||
-                        parseNthChildArgs(&zToken[10], nToken-11, &a, &b)
-                    ) {
+                    if (twocolons || nToken < 2 || zToken[nToken-1] != ')') {
+                        goto syntax_error;
+                    }
+                    if (nToken >= 11 &&
+                        0 == strnicmp(zToken, "nth-child(", 10)) {
+                        eArg = CSS_PSEUDOCLASS_NTHCHILD; nOff = 10;
+                    } else if (nToken >= 13 &&
+                        0 == strnicmp(zToken, "nth-of-type(", 12)) {
+                        eArg = CSS_PSEUDOCLASS_NTHOFTYPE; nOff = 12;
+                    } else if (nToken >= 16 &&
+                        0 == strnicmp(zToken, "nth-last-child(", 15)) {
+                        eArg = CSS_PSEUDOCLASS_NTHLASTCHILD; nOff = 15;
+                    } else if (nToken >= 5 &&
+                        0 == strnicmp(zToken, "not(", 4)) {
+                        if (parseNotArgument(&zToken[4], nToken-5, pParse)) {
+                            goto syntax_error;
+                        }
+                        inputNextToken(pInput);
+                        break;
+                    } else {
+                        goto syntax_error;
+                    }
+                    if (parseNthChildArgs(&zToken[nOff],nToken-nOff-1,&a,&b)){
                         goto syntax_error;
                     }
                     sprintf(zBuf, "%d %d", a, b);
                     tArg.z = zBuf;
                     tArg.n = strlen(zBuf);
-                    HtmlCssSelector(pParse, CSS_PSEUDOCLASS_NTHCHILD, 0, &tArg);
+                    HtmlCssSelector(pParse, eArg, 0, &tArg);
                     inputNextToken(pInput);
                     break;
                 }
@@ -781,67 +1004,7 @@ static int parseSelector(pInput, pParse)
             }
 
             case CT_LSP: {    /* Attribute selector of some kind */
-                CssToken t1;
-                CssToken t2;
-                if (eNext == CT_SPACE) inputNextToken(pInput);
-
-                eToken = inputGetToken(pInput, &t1.z, &t1.n);
-                if (eToken != CT_IDENT) goto syntax_error;
-
-                inputNextToken(pInput);
-                eToken = inputGetToken(pInput, 0, 0);
-                if (eToken == CT_SPACE) {
-                    inputNextToken(pInput);
-                    eToken = inputGetToken(pInput, 0, 0);
-                }
-
-                if (eToken == CT_RSP) {
-                    HtmlCssSelector(pParse, CSS_SELECTOR_ATTR, &t1, 0);
-                } else if (
-                        eToken == CT_TILDE ||
-                        eToken == CT_PIPE ||
-                        eToken == CT_STAR ||
-                        eToken == CT_HAT ||
-                        eToken == CT_DOLLAR ||
-                        eToken == CT_EQUALS
-                ) {
-                    if (eToken == CT_TILDE || eToken == CT_PIPE
-                        || eToken == CT_STAR || eToken == CT_HAT
-                        || eToken == CT_DOLLAR
-                        ) {
-                         CssTokenType e;
-                         inputNextToken(pInput);
-                         e = inputGetToken(pInput, 0, 0);
-                         if (e != CT_EQUALS) goto syntax_error;
-                    }
-                    inputNextToken(pInput);
-                    if (CT_SPACE == inputGetToken(pInput, 0, 0)) {
-                        inputNextToken(pInput);
-                    }
-                    eNext = inputGetToken(pInput, &t2.z, &t2.n);
-                    if (eNext != CT_IDENT && eNext != CT_STRING) {
-                        goto syntax_error;
-                    }
-
-                    inputNextToken(pInput);
-                    if (CT_SPACE == inputGetToken(pInput, 0, 0)) {
-                        inputNextToken(pInput);
-                    }
-                    eNext = inputGetToken(pInput, 0, 0);
-                    if (eNext != CT_RSP) goto syntax_error;
-
-                    HtmlCssSelector(pParse, (
-                        (eToken == CT_TILDE) ? CSS_SELECTOR_ATTRLISTVALUE :
-                        (eToken == CT_PIPE)  ? CSS_SELECTOR_ATTRHYPHEN :
-                        (eToken == CT_STAR)  ? CSS_SELECTOR_ATTRSTAR :
-                        (eToken == CT_HAT)  ? CSS_SELECTOR_ATTRHAT :
-                        (eToken == CT_DOLLAR) ? CSS_SELECTOR_ATTREND :
-                        CSS_SELECTOR_ATTRVALUE) , &t1, &t2
-                    );
-                } else {
-                    goto syntax_error;
-                }
-                inputNextToken(pInput);
+                if (parseAttrSelector(pInput, pParse)) goto syntax_error;
                 break;
             }
 

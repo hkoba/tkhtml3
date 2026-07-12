@@ -136,7 +136,21 @@ static const char *constantToString(int c){
             return "CSS_SELECTORCHAIN_GENERALSIBLING";
         case CSS_PSEUDOCLASS_NTHCHILD:
             return "CSS_PSEUDOCLASS_NTHCHILD";
-        case CSS_PSEUDOCLASS_LANG: 
+        case CSS_PSEUDOCLASS_ROOT:
+            return "CSS_PSEUDOCLASS_ROOT";
+        case CSS_PSEUDOCLASS_EMPTY:
+            return "CSS_PSEUDOCLASS_EMPTY";
+        case CSS_PSEUDOCLASS_ONLYCHILD:
+            return "CSS_PSEUDOCLASS_ONLYCHILD";
+        case CSS_PSEUDOCLASS_FIRSTOFTYPE:
+            return "CSS_PSEUDOCLASS_FIRSTOFTYPE";
+        case CSS_PSEUDOCLASS_LASTOFTYPE:
+            return "CSS_PSEUDOCLASS_LASTOFTYPE";
+        case CSS_PSEUDOCLASS_NTHOFTYPE:
+            return "CSS_PSEUDOCLASS_NTHOFTYPE";
+        case CSS_PSEUDOCLASS_NTHLASTCHILD:
+            return "CSS_PSEUDOCLASS_NTHLASTCHILD";
+        case CSS_PSEUDOCLASS_LANG:
             return "CSS_PSEUDOCLASS_LANG";
         case CSS_PSEUDOCLASS_FIRSTCHILD: 
             return "CSS_PSEUDOCLASS_FIRSTCHILD";
@@ -2993,12 +3007,20 @@ cssSelectorPropertySetPair(pParse, pSelector, pPropertySet, freeWhat)
              case CSS_SELECTOR_CLASS:
              case CSS_PSEUDOCLASS_LANG:
              case CSS_PSEUDOCLASS_FIRSTCHILD:
+             case CSS_PSEUDOCLASS_LASTCHILD:
              case CSS_PSEUDOCLASS_LINK:
              case CSS_PSEUDOCLASS_VISITED:
              case CSS_PSEUDOCLASS_ACTIVE:
              case CSS_PSEUDOCLASS_HOVER:
              case CSS_PSEUDOCLASS_FOCUS:
              case CSS_PSEUDOCLASS_NTHCHILD:
+             case CSS_PSEUDOCLASS_ROOT:
+             case CSS_PSEUDOCLASS_EMPTY:
+             case CSS_PSEUDOCLASS_ONLYCHILD:
+             case CSS_PSEUDOCLASS_FIRSTOFTYPE:
+             case CSS_PSEUDOCLASS_LASTOFTYPE:
+             case CSS_PSEUDOCLASS_NTHOFTYPE:
+             case CSS_PSEUDOCLASS_NTHLASTCHILD:
                  spec += 100;
                  break;
          }
@@ -3029,15 +3051,37 @@ cssSelectorPropertySetPair(pParse, pSelector, pPropertySet, freeWhat)
                 pS->eSelector == CSS_SELECTOR_ATTRHYPHEN ||
                              */
                               ) ||
+                pS->isNot ||
                 pS->eSelector == CSS_PSEUDOCLASS_ACTIVE ||
                 pS->eSelector == CSS_PSEUDOCLASS_HOVER ||
                 pS->eSelector == CSS_PSEUDOCLASS_FOCUS ||
                 pS->eSelector == CSS_PSEUDOCLASS_LINK ||
                 pS->eSelector == CSS_PSEUDOCLASS_VISITED ||
-                pS->eSelector == CSS_PSEUDOCLASS_NTHCHILD
+                pS->eSelector == CSS_PSEUDOCLASS_NTHCHILD ||
+                pS->eSelector == CSS_PSEUDOCLASS_FIRSTCHILD ||
+                pS->eSelector == CSS_PSEUDOCLASS_LASTCHILD ||
+                pS->eSelector == CSS_PSEUDOCLASS_ROOT ||
+                pS->eSelector == CSS_PSEUDOCLASS_EMPTY ||
+                pS->eSelector == CSS_PSEUDOCLASS_ONLYCHILD ||
+                pS->eSelector == CSS_PSEUDOCLASS_FIRSTOFTYPE ||
+                pS->eSelector == CSS_PSEUDOCLASS_LASTOFTYPE ||
+                pS->eSelector == CSS_PSEUDOCLASS_NTHOFTYPE ||
+                pS->eSelector == CSS_PSEUDOCLASS_NTHLASTCHILD
             )
         ) {
             pS = pS->pNext;
+        }
+
+        /* A negated selector must never be used as the hash anchor: the
+         * rule ":not(.foo) {}" matches elements withOUT class "foo", so
+         * filing it in the by-class bucket under "foo" would be exactly
+         * backwards. Treat it as universal instead.
+         */
+        if (pS->isNot) {
+            insertRule(&pStyle->pUniversalRules, pRule);
+            pRule->pSelector = pSelector;
+            pRule->pPropertySet = pPropertySet;
+            return;
         }
 
         switch (pS->eSelector) {
@@ -3300,7 +3344,115 @@ static int attrTest(eType, zString, zAttr)
 #define N_PARENT(x)      HtmlNodeParent(x)
 #define N_NUMCHILDREN(x) HtmlNodeNumChildren(x)
 #define N_CHILD(x,y)     HtmlNodeChild(x,y)
-int 
+
+/*
+ * Return true if node x is the left-most child of its parent, not
+ * counting white-space nodes (the historic tkhtml interpretation of
+ * :first-child - a non-whitespace text sibling blocks the match).
+ */
+static int
+nodeIsFirstChild(x)
+    HtmlNode *x;
+{
+    HtmlNode *pParent = N_PARENT(x);
+    int i;
+    if (!pParent) return 0;
+    for (i = 0; i < N_NUMCHILDREN(pParent); i++) {
+        HtmlNode *pChild = N_CHILD(pParent, i);
+        if (pChild == x) return 1;
+        if (!HtmlNodeIsWhitespace(pChild)) return 0;
+    }
+    assert(!"nodeIsFirstChild: x is not a child of its parent");
+    return 0;
+}
+
+/*
+ * Return true if node x is the right-most child of its parent, not
+ * counting white-space nodes.
+ */
+static int
+nodeIsLastChild(x)
+    HtmlNode *x;
+{
+    HtmlNode *pParent = N_PARENT(x);
+    int i;
+    if (!pParent) return 0;
+    for (i = N_NUMCHILDREN(pParent) - 1; i >= 0; i--) {
+        HtmlNode *pChild = N_CHILD(pParent, i);
+        if (pChild == x) return 1;
+        if (!HtmlNodeIsWhitespace(pChild)) return 0;
+    }
+    assert(!"nodeIsLastChild: x is not a child of its parent");
+    return 0;
+}
+
+/*
+ * True if the 1-based index idx satisfies the an+b formula (a*k+b == idx
+ * for some integer k >= 0). a and b are the coefficients produced by
+ * parseNthChildArgs() in cssparser.c.
+ */
+static int
+nthMatch(a, b, idx)
+    int a;
+    int b;
+    int idx;
+{
+    int d = idx - b;
+    if (a == 0) return (d == 0);
+    if (a > 0)  return (d >= 0 && (d % a) == 0);
+    return (d <= 0 && ((-d) % (-a)) == 0);
+}
+
+/*
+ * Test a single non-combinator simple selector against node x, without
+ * following p->pNext. This is the building block for :not(...) - only
+ * the selector types that parseNotArgument() (cssparser.c) can produce
+ * need to be handled. Anything else reports "no match".
+ */
+static int
+simpleSelectorMatch(p, x)
+    CssSelector *p;
+    HtmlNode *x;
+{
+    switch (p->eSelector) {
+        case CSS_SELECTOR_UNIVERSAL:
+            return 1;
+
+        case CSS_SELECTOR_TYPE:
+            return (
+                !HtmlNodeIsText(x) && x->zTag &&
+                0 == strcmp(x->zTag, p->zValue)
+            );
+
+        case CSS_SELECTOR_CLASS:
+            return attrTest(
+                CSS_SELECTOR_ATTRLISTVALUE, p->zValue, N_ATTR(x, "class")
+            );
+
+        case CSS_SELECTOR_ID:
+            return attrTest(
+                CSS_SELECTOR_ATTRVALUE, p->zValue, N_ATTR(x, "id")
+            );
+
+        case CSS_SELECTOR_ATTR:
+        case CSS_SELECTOR_ATTRVALUE:
+        case CSS_SELECTOR_ATTRLISTVALUE:
+        case CSS_SELECTOR_ATTRHYPHEN:
+        case CSS_SELECTOR_ATTRSTAR:
+        case CSS_SELECTOR_ATTRHAT:
+        case CSS_SELECTOR_ATTREND:
+            return attrTest(p->eSelector, p->zValue, N_ATTR(x, p->zAttr));
+
+        case CSS_PSEUDOCLASS_FIRSTCHILD:
+            return nodeIsFirstChild(x);
+
+        case CSS_PSEUDOCLASS_LASTCHILD:
+            return nodeIsLastChild(x);
+    }
+    return 0;
+}
+
+int
 HtmlCssSelectorTest(pSelector, pNode, dynamic_true)
     CssSelector *pSelector;
     HtmlNode *pNode;
@@ -3314,6 +3466,14 @@ HtmlCssSelectorTest(pSelector, pNode, dynamic_true)
 
     while( p && x ){
         pElem = HtmlNodeAsElement(x);
+
+        /* A simple selector wrapped in :not(...) - negate the result.
+         * Only element nodes can satisfy a negation.  */
+        if (p->isNot) {
+            if (HtmlNodeIsText(x) || simpleSelectorMatch(p, x)) return 0;
+            p = p->pNext;
+            continue;
+        }
 
         switch( p->eSelector ){
             case CSS_SELECTOR_UNIVERSAL:
@@ -3393,33 +3553,92 @@ HtmlCssSelectorTest(pSelector, pNode, dynamic_true)
                 return 0;
             }
 
-            case CSS_PSEUDOCLASS_NTHCHILD: {
+            case CSS_PSEUDOCLASS_NTHCHILD:
+            case CSS_PSEUDOCLASS_NTHLASTCHILD: {
                 /* zValue holds "a b"; match if the 1-based index of x
-                 * among its element siblings equals a*k+b for some
-                 * integer k >= 0. */
+                 * among its element siblings (from the start for
+                 * :nth-child, from the end for :nth-last-child) equals
+                 * a*k+b for some integer k >= 0. */
                 HtmlNode *pParent = N_PARENT(x);
                 int a = 0, b = 0;
                 int idx = 0;
-                int i, d;
+                int i;
+                int iStep = (p->eSelector==CSS_PSEUDOCLASS_NTHCHILD) ? 1 : -1;
                 if (!pParent || !p->zValue) return 0;
                 if (2 != sscanf(p->zValue, "%d %d", &a, &b)) return 0;
-                for (i = 0; i < N_NUMCHILDREN(pParent); i++) {
+                i = (iStep > 0) ? 0 : N_NUMCHILDREN(pParent) - 1;
+                for ( ; i >= 0 && i < N_NUMCHILDREN(pParent); i += iStep) {
                     HtmlNode *pChild = N_CHILD(pParent, i);
                     if (HtmlNodeIsText(pChild)) continue;
                     idx++;
                     if (pChild == x) break;
                 }
-                if (i >= N_NUMCHILDREN(pParent)) return 0;
-                d = idx - b;
-                if (a == 0) {
-                    if (d != 0) return 0;
-                } else if (a > 0) {
-                    if (d < 0 || (d % a) != 0) return 0;
-                } else {
-                    if (d > 0 || ((-d) % (-a)) != 0) return 0;
-                }
+                if (i < 0 || i >= N_NUMCHILDREN(pParent)) return 0;
+                if (!nthMatch(a, b, idx)) return 0;
                 break;
             }
+
+            case CSS_PSEUDOCLASS_NTHOFTYPE: {
+                /* Like :nth-child, but only siblings with the same tag
+                 * name as x are counted. */
+                HtmlNode *pParent = N_PARENT(x);
+                int a = 0, b = 0;
+                int idx = 0;
+                int i;
+                if (!pParent || !p->zValue || HtmlNodeIsText(x)) return 0;
+                if (2 != sscanf(p->zValue, "%d %d", &a, &b)) return 0;
+                for (i = 0; i < N_NUMCHILDREN(pParent); i++) {
+                    HtmlNode *pChild = N_CHILD(pParent, i);
+                    if (HtmlNodeIsText(pChild)) continue;
+                    if (strcmp(pChild->zTag, x->zTag)) continue;
+                    idx++;
+                    if (pChild == x) break;
+                }
+                if (i >= N_NUMCHILDREN(pParent)) return 0;
+                if (!nthMatch(a, b, idx)) return 0;
+                break;
+            }
+
+            case CSS_PSEUDOCLASS_FIRSTOFTYPE:
+            case CSS_PSEUDOCLASS_LASTOFTYPE: {
+                /* Match if x is the first (last) element child of its
+                 * parent with x's tag name. */
+                HtmlNode *pParent = N_PARENT(x);
+                HtmlNode *pFound = 0;
+                int i;
+                if (!pParent || HtmlNodeIsText(x)) return 0;
+                for (i = 0; i < N_NUMCHILDREN(pParent); i++) {
+                    HtmlNode *pChild = N_CHILD(pParent, i);
+                    if (HtmlNodeIsText(pChild)) continue;
+                    if (strcmp(pChild->zTag, x->zTag)) continue;
+                    pFound = pChild;
+                    if (p->eSelector == CSS_PSEUDOCLASS_FIRSTOFTYPE) break;
+                }
+                if (pFound != x) return 0;
+                break;
+            }
+
+            case CSS_PSEUDOCLASS_ONLYCHILD: {
+                /* Match if x is the only element child of its parent. */
+                HtmlNode *pParent = N_PARENT(x);
+                int i, nElem = 0;
+                if (!pParent || HtmlNodeIsText(x)) return 0;
+                for (i = 0; i < N_NUMCHILDREN(pParent); i++) {
+                    if (!HtmlNodeIsText(N_CHILD(pParent, i))) nElem++;
+                }
+                if (nElem != 1) return 0;
+                break;
+            }
+
+            case CSS_PSEUDOCLASS_ROOT:
+                if (N_PARENT(x)) return 0;
+                break;
+
+            case CSS_PSEUDOCLASS_EMPTY:
+                /* No children at all - text nodes count, in line with
+                 * the CSS3 definition (white-space prevents :empty). */
+                if (N_NUMCHILDREN(x) > 0) return 0;
+                break;
 
             case CSS_SELECTORCHAIN_ADJACENT: {
                 HtmlNode *pParent = N_PARENT(x);
@@ -3449,34 +3668,17 @@ HtmlCssSelectorTest(pSelector, pNode, dynamic_true)
                 break;
             }
 
-            case CSS_PSEUDOCLASS_FIRSTCHILD: {
+            case CSS_PSEUDOCLASS_FIRSTCHILD:
                 /* :first-child selector matches if x is the left-most child
                  * of it's parent, not including white-space nodes. */
-                HtmlNode *pParent = N_PARENT(x);
-                int i;
-                if (!pParent) return 0;
-                for (i = 0; i < N_NUMCHILDREN(pParent); i++) {
-                    HtmlNode *pChild = N_CHILD(pParent, i);
-                    if (pChild == x) break;
-                    if (!HtmlNodeIsWhitespace(pChild)) return 0;
-                }
-                assert(i < N_NUMCHILDREN(pParent));
+                if (!nodeIsFirstChild(x)) return 0;
                 break;
-            }
-            case CSS_PSEUDOCLASS_LASTCHILD: {
+
+            case CSS_PSEUDOCLASS_LASTCHILD:
                 /* :last-child selector matches if x is the right-most child
                  * of it's parent, not including white-space nodes. */
-                HtmlNode *pParent = N_PARENT(x);
-                int i;
-                if (!pParent) return 0;
-                for (i = N_NUMCHILDREN(pParent) - 1; i >= 0; i--) {
-                    HtmlNode *pChild = N_CHILD(pParent, i);
-                    if (pChild == x) break;
-                    if (!HtmlNodeIsWhitespace(pChild)) return 0;
-                }
-                assert(i >= 0);
+                if (!nodeIsLastChild(x)) return 0;
                 break;
-            }
                 
             case CSS_PSEUDOCLASS_LANG:
                 return 0;
@@ -4164,7 +4366,11 @@ HtmlCssSelectorToString(pSelector, pObj)
     if (pSelector->pNext) {
         HtmlCssSelectorToString(pSelector->pNext, pObj);
     }
- 
+
+    if (pSelector->isNot) {
+        Tcl_AppendToObj(pObj, ":not(", -1);
+    }
+
     switch (pSelector->eSelector) {
         case CSS_SELECTORCHAIN_DESCENDANT:         z = " ";       break;
         case CSS_SELECTORCHAIN_CHILD:              z = " > ";     break;
@@ -4174,6 +4380,11 @@ HtmlCssSelectorToString(pSelector, pObj)
         case CSS_PSEUDOCLASS_LANG:                 z = ":lang";         break;
         case CSS_PSEUDOCLASS_FIRSTCHILD:           z = ":first-child";  break;
         case CSS_PSEUDOCLASS_LASTCHILD:            z = ":last-child";   break;
+        case CSS_PSEUDOCLASS_ROOT:                 z = ":root";         break;
+        case CSS_PSEUDOCLASS_EMPTY:                z = ":empty";        break;
+        case CSS_PSEUDOCLASS_ONLYCHILD:            z = ":only-child";   break;
+        case CSS_PSEUDOCLASS_FIRSTOFTYPE:          z = ":first-of-type"; break;
+        case CSS_PSEUDOCLASS_LASTOFTYPE:           z = ":last-of-type"; break;
         case CSS_PSEUDOCLASS_LINK:                 z = ":link";         break;
         case CSS_PSEUDOCLASS_VISITED:              z = ":visited";      break;
         case CSS_PSEUDOCLASS_ACTIVE:               z = ":active";       break;
@@ -4227,12 +4438,20 @@ HtmlCssSelectorToString(pSelector, pObj)
                 "[", pSelector->zAttr, "$=\"", pSelector->zValue, "\"]", NULL);
             break;
 
-        case CSS_PSEUDOCLASS_NTHCHILD: {
+        case CSS_PSEUDOCLASS_NTHCHILD:
+        case CSS_PSEUDOCLASS_NTHOFTYPE:
+        case CSS_PSEUDOCLASS_NTHLASTCHILD: {
             /* zValue holds the parsed "a b" pair. */
             int a = 0, b = 0;
-            char zBuf[48];
+            char zBuf[64];
+            const char *zName = ":nth-child";
+            if (pSelector->eSelector == CSS_PSEUDOCLASS_NTHOFTYPE) {
+                zName = ":nth-of-type";
+            } else if (pSelector->eSelector == CSS_PSEUDOCLASS_NTHLASTCHILD) {
+                zName = ":nth-last-child";
+            }
             sscanf(pSelector->zValue, "%d %d", &a, &b);
-            sprintf(zBuf, ":nth-child(%dn%+d)", a, b);
+            sprintf(zBuf, "%s(%dn%+d)", zName, a, b);
             Tcl_AppendStringsToObj(pObj, zBuf, NULL);
             break;
         }
@@ -4246,6 +4465,7 @@ HtmlCssSelectorToString(pSelector, pObj)
     }
 
     if (z) Tcl_AppendToObj(pObj, z, -1);
+    if (pSelector->isNot) Tcl_AppendToObj(pObj, ")", -1);
 }
 
 /*

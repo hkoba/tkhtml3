@@ -7,6 +7,14 @@
 #                 parser), implicit </p> before structural elements, the
 #                 global [hidden] attribute.
 #
+#     modern-2.*  CSS3 selectors: :root, :empty, :only-child,
+#                 :first-of-type/:last-of-type/:nth-of-type(),
+#                 :nth-last-child(), :not(<simple selector>).
+#
+# Note: when testing with properties, prefer 'color' - the initial value
+# of e.g. 'border-top-width' is "medium" (2px), which is easy to confuse
+# with a test value.
+#
 proc sourcefile {file} {
   set fname [file join [file dirname [info script]] $file]
   uplevel #0 [list source $fname]
@@ -92,5 +100,137 @@ tcltest::test modern-1.8 {dialog hidden unless open} -body {
   .h parse -final {<body><dialog id="d1">x</dialog><dialog open id="d2">y</dialog></body>}
   list [property [idnode d1] display] [property [idnode d2] display]
 } -result {none block}
+
+#--------------------------------------------------------------------------
+# modern-2.*: CSS3 selectors.
+#
+tcltest::test modern-2.0 {:root matches the document root only} -body {
+  # background-color, not color: color is inherited and would leak to
+  # the div, hiding what is being tested here.
+  .h reset
+  .h style { :root { background-color: red } }
+  .h parse -final {<html><body><div id="d">x</div></body></html>}
+  list [property [lindex [.h search html] 0] background-color] \
+       [property [idnode d] background-color]
+} -result {red transparent}
+
+tcltest::test modern-2.1 {:empty} -body {
+  .h reset
+  .h style { div:empty { color: red } }
+  .h parse -final {<body><div id="a"></div><div id="b">x</div></body>}
+  list [property [idnode a] color] [property [idnode b] color]
+} -result {red black}
+
+tcltest::test modern-2.2 {:only-child} -body {
+  .h reset
+  .h style { span:only-child { color: red } }
+  .h parse -final {<body>
+    <b><span id="a">x</span></b>
+    <i><span id="b">y</span><span id="c">z</span></i>
+  </body>}
+  list [property [idnode a] color] \
+       [property [idnode b] color] [property [idnode c] color]
+} -result {red black black}
+
+tcltest::test modern-2.3 {:first-of-type and :last-of-type} -body {
+  .h reset
+  .h style {
+    p:first-of-type { color: red }
+    p:last-of-type { color: blue }
+  }
+  .h parse -final {<body>
+    <div id="d">top</div>
+    <p id="p1">one</p><p id="p2">two</p><p id="p3">three</p>
+  </body>}
+  list [property [idnode d] color] [property [idnode p1] color] \
+       [property [idnode p2] color] [property [idnode p3] color]
+} -result {black red black blue}
+
+tcltest::test modern-2.4 {:nth-of-type counts same-tag siblings only} -body {
+  .h reset
+  .h style { p:nth-of-type(2) { color: red } }
+  .h parse -final {<body>
+    <div>zero</div><p id="p1">one</p><div>x</div><p id="p2">two</p>
+  </body>}
+  list [property [idnode p1] color] [property [idnode p2] color]
+} -result {black red}
+
+tcltest::test modern-2.5 {:nth-last-child} -body {
+  .h reset
+  .h style { li:nth-last-child(1) { color: red } li:nth-last-child(odd) { font-style: italic } }
+  .h parse -final {<body><ul>
+    <li id="l1">1</li><li id="l2">2</li><li id="l3">3</li>
+  </ul></body>}
+  list [property [idnode l1] color] [property [idnode l3] color] \
+       [property [idnode l1] font-style] [property [idnode l2] font-style]
+} -result {black red italic normal}
+
+tcltest::test modern-2.6 {:not(.class)} -body {
+  .h reset
+  .h style { div:not(.keep) { color: red } }
+  .h parse -final {<body>
+    <div id="a">x</div><div class="keep" id="b">y</div><span id="c">z</span>
+  </body>}
+  list [property [idnode a] color] [property [idnode b] color] \
+       [property [idnode c] color]
+} -result {red black black}
+
+tcltest::test modern-2.7 {:not([attr])} -body {
+  .h reset
+  .h style { p:not([lang]) { color: red } }
+  .h parse -final {<body><p lang="en" id="a">x</p><p id="b">y</p></body>}
+  list [property [idnode a] color] [property [idnode b] color]
+} -result {black red}
+
+tcltest::test modern-2.8 {:not(:first-child)} -body {
+  .h reset
+  .h style { li:not(:first-child) { color: red } }
+  .h parse -final {<body><ul>
+    <li id="l1">1</li><li id="l2">2</li><li id="l3">3</li>
+  </ul></body>}
+  list [property [idnode l1] color] [property [idnode l2] color] \
+       [property [idnode l3] color]
+} -result {black red red}
+
+tcltest::test modern-2.9 {:not(tag)} -body {
+  .h reset
+  .h style { li :not(b) { color: red } }
+  .h parse -final {<body><ul><li>
+    <b id="a">x</b><i id="b">y</i>
+  </li></ul></body>}
+  list [property [idnode a] color] [property [idnode b] color]
+} -result {black red}
+
+tcltest::test modern-2.10 {:not takes the specificity of its argument} -body {
+  # div:not(.b) = 1 type + 1 class = 101, beats .a = 100.
+  .h reset
+  .h style { .a { color: red } div:not(.b) { color: blue } }
+  .h parse -final {<body><div class="a" id="d">x</div></body>}
+  property [idnode d] color
+} -result {blue}
+
+tcltest::test modern-2.11 {new selectors work with the search command} -body {
+  .h reset
+  .h parse -final {<body>
+    <div id="a"></div><div class="keep" id="b">y</div>
+    <p id="p1">x</p><p id="p2">y</p>
+  </body>}
+  list [llength [.h search {div:empty}]] \
+       [llength [.h search {div:not(.keep)}]] \
+       [llength [.h search {p:last-of-type}]] \
+       [llength [.h search {p:nth-last-child(1)}]]
+} -result {1 1 1 1}
+
+tcltest::test modern-2.12 {:not with unsupported argument kills the ruleset only} -body {
+  .h reset
+  set ::modern_errvar {}
+  .h style -errorvar ::modern_errvar {
+    p:not(:hover) { color: red }
+    p { font-style: italic }
+  }
+  .h parse -final {<body><p id="p1">x</p></body>}
+  list [property [idnode p1] color] [property [idnode p1] font-style] \
+       [expr {[llength $::modern_errvar] > 0}]
+} -result {black italic 1}
 
 finish_test
