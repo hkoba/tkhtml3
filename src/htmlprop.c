@@ -403,6 +403,7 @@ HtmlPropertyToString(pProp, pzFree)
             char *zFunc = 0;
             switch (pProp->eType) {
                 case CSS_TYPE_EM:         zSym = "em"; break;
+                case CSS_TYPE_REM:        zSym = "rem"; break;
                 case CSS_TYPE_PX:         zSym = "px"; break;
                 case CSS_TYPE_PT:         zSym = "pt"; break;
                 case CSS_TYPE_PC:         zSym = "pc"; break;
@@ -960,6 +961,26 @@ propertyValuesSetFontSize(p, pProp)
         case CSS_TYPE_EM:
             iScale = (double)pProp->v.rVal;
             break;
+
+        /* Font-size in terms of the root element font size. If the
+         * root element itself is being styled (its computed values do
+         * not exist yet), treat 1rem like 1em - for the root, em and
+         * rem resolve against the same (initial) font size anyway.
+         */
+        case CSS_TYPE_REM: {
+            HtmlNode *pRoot = p->pTree->pRoot;
+            HtmlComputedValues *pRootV = 0;
+            if (pRoot && pRoot != p->pNode) {
+                pRootV = HtmlNodeComputedValues(pRoot);
+            }
+            if (pRootV) {
+                p->fontKey.iFontSize =
+                        pRootV->fFont->pKey->iFontSize * pProp->v.rVal;
+                return 0;
+            }
+            iScale = (double)pProp->v.rVal;
+            break;
+        }
         case CSS_TYPE_EX: {
             HtmlNode *pParent = p->pParent;
             if (pParent) {
@@ -1467,6 +1488,12 @@ propertyValuesSetLength(p, pIVal, em_mask, pProp, allowNegative)
             if (em_mask == 0) return 1;
             iVal = (int)(pProp->v.rVal * 100.0);
             break;
+        case CSS_TYPE_REM:
+            /* Stored like 'em' (value * 100), converted against the
+             * root element font at ComputedValuesFinish() time. */
+            if (em_mask == 0) return 1;
+            iVal = (int)(pProp->v.rVal * 100.0);
+            break;
 
         case CSS_TYPE_PX:
             iVal = INTEGER(rZoomedVal);
@@ -1512,6 +1539,8 @@ propertyValuesSetLength(p, pIVal, em_mask, pProp, allowNegative)
             p->em_mask |= em_mask;
         } else if (pProp->eType == CSS_TYPE_EX) {
             p->ex_mask |= em_mask;
+        } else if (pProp->eType == CSS_TYPE_REM) {
+            p->rem_mask |= em_mask;
         }
     } else {
         return 1;
@@ -1687,6 +1716,7 @@ propertyValuesSetVerticalAlign(p, pProp)
             p->eVerticalAlignPercent = 0;
             p->em_mask &= (~MASK);
             p->ex_mask &= (~MASK);
+            p->rem_mask &= (~MASK);
 
             break;
         }
@@ -1706,6 +1736,7 @@ propertyValuesSetVerticalAlign(p, pProp)
             p->eVerticalAlignPercent = 0;
             p->em_mask &= (~MASK);
             p->ex_mask &= (~MASK);
+            p->rem_mask &= (~MASK);
             break;
 
         case CSS_TYPE_PERCENT: {
@@ -1716,6 +1747,7 @@ propertyValuesSetVerticalAlign(p, pProp)
             p->eVerticalAlignPercent = 1;
             p->em_mask &= (~MASK);
             p->ex_mask &= (~MASK);
+            p->rem_mask &= (~MASK);
             break;
         }
 
@@ -1763,6 +1795,7 @@ propertyValuesSetSize(p, pIVal, p_mask, pProp, allow_mask)
     p->values.mask &= ~p_mask;
     p->em_mask &= ~p_mask;
     p->ex_mask &= ~p_mask;
+    p->rem_mask &= ~p_mask;
 
     switch (pProp->eType) {
 
@@ -2003,6 +2036,7 @@ getPrototypeCreator(pTree, pMask, piCopyBytes)
 
         assert(p->em_mask == 0);
         assert(p->ex_mask == 0);
+        assert(p->rem_mask == 0);
         for (i = 0; i < sizeof(propdef) / sizeof(PropertyDef); i++) {
             assert(
                 (!propdef[i].isInherit && propdef[i].iOffset < sCopyBytes) ||
@@ -2657,6 +2691,21 @@ HtmlComputedValuesFinish(p)
         } else if (p->ex_mask & pMap->mask) {
             pVal = (int *)(((unsigned char *)&p->values) + pMap->offset);
             h = (*pVal * pFont->ex_pixels);
+        } else if (p->rem_mask & pMap->mask) {
+            /* 'rem' - the em size of the root element font. When the
+             * root element itself is being styled, its computed values
+             * do not exist yet; use this node's own font (em == rem on
+             * the root). The root is always styled first, so all other
+             * nodes see the real root font here.
+             */
+            HtmlFont *pRemFont = pFont;
+            HtmlNode *pRoot = p->pTree->pRoot;
+            if (pRoot && pRoot != p->pNode) {
+                HtmlComputedValues *pRootV = HtmlNodeComputedValues(pRoot);
+                if (pRootV) pRemFont = pRootV->fFont;
+            }
+            pVal = (int *)(((unsigned char *)&p->values) + pMap->offset);
+            h = (*pVal * pRemFont->em_pixels);
         }
 
         if (pVal) {

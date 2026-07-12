@@ -96,9 +96,11 @@ typedef struct CssPropertySet CssPropertySet;
 #define CSS_TYPE_COUNTER     16            /* Value in 'zVal' */
 #define CSS_TYPE_COUNTERS    17            /* Value in 'zVal' */
 
-#define CSS_TYPE_RAW         18 
+#define CSS_TYPE_RAW         18
 
 #define CSS_TYPE_LIST        19            /* Used for 'content' property */
+
+#define CSS_TYPE_REM         20            /* Value in 'rVal' (CSS3) */
 
 
 /*

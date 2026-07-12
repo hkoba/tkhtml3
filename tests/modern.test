@@ -11,6 +11,8 @@
 #                 :first-of-type/:last-of-type/:nth-of-type(),
 #                 :nth-last-child(), :not(<simple selector>).
 #
+#     modern-3.*  The rem unit (root-element-relative lengths).
+#
 # Note: when testing with properties, prefer 'color' - the initial value
 # of e.g. 'border-top-width' is "medium" (2px), which is easy to confuse
 # with a test value.
@@ -220,6 +222,42 @@ tcltest::test modern-2.11 {new selectors work with the search command} -body {
        [llength [.h search {p:last-of-type}]] \
        [llength [.h search {p:nth-last-child(1)}]]
 } -result {1 1 1 1}
+
+#--------------------------------------------------------------------------
+# modern-3.*: the rem unit.
+#
+tcltest::test modern-3.0 {rem resolves against the root font, em against own} -body {
+  .h reset
+  .h style {
+    html { font-size: 10px }
+    body { font-size: 20px }
+    div  { width: 5rem; margin-top: 2em; margin-left: 2rem; font-size: 20px }
+  }
+  .h parse -final {<html><body><div id="d">x</div></body></html>}
+  list [property [idnode d] width] [property [idnode d] margin-top] \
+       [property [idnode d] margin-left]
+} -result {50px 40px 20px}
+
+tcltest::test modern-3.1 {font-size in rem ignores the parent font} -body {
+  .h reset
+  .h style {
+    html { font-size: 10px }
+    body { font-size: 20px }
+    span { font-size: 1.5rem }
+  }
+  .h parse -final {<html><body><span id="s">x</span></body></html>}
+  property [idnode s] font-size
+} -result {15px}
+
+tcltest::test modern-3.2 {rem works for border widths} -body {
+  .h reset
+  .h style {
+    html { font-size: 10px }
+    div  { border-top-width: 2rem; border-top-style: solid }
+  }
+  .h parse -final {<html><body><div id="d">x</div></body></html>}
+  property [idnode d] border-top-width
+} -result {20px}
 
 tcltest::test modern-2.12 {:not with unsupported argument kills the ruleset only} -body {
   .h reset

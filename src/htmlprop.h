@@ -330,6 +330,7 @@ struct HtmlComputedValuesCreator {
     HtmlNode *pParent;               /* Node to inherit from */
     unsigned int em_mask;
     unsigned int ex_mask;
+    unsigned int rem_mask;           /* Values relative to root font size */
     int eVerticalAlignPercent;       /* True if 'vertical-align' is a % */
     CssProperty *pDeleteList;
 

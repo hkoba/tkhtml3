@@ -696,6 +696,7 @@ tokenToProperty(pParse, pToken)
     } lengths[] = {
         {CSS_TYPE_EM,         2, "em"},
         {CSS_TYPE_EX,         2, "ex"},
+        {CSS_TYPE_REM,        3, "rem"},
         {CSS_TYPE_PX,         2, "px"},
         {CSS_TYPE_PT,         2, "pt"},
         {CSS_TYPE_PERCENT,    1, "%"},
