@@ -92,6 +92,41 @@
 
   /* --- word-spacing ----------------------------------------------- */
   .wsp { word-spacing: 10px }
+
+  /* --- Tier 2: custom properties (design tokens) ------------------ */
+  :root {
+    --brand: #204060;
+    --accent: #b8860b;
+    --pad: 0.4rem;
+  }
+  .token-chip {
+    display: inline-block; margin-right: 0.6rem;
+    padding: var(--pad) calc(var(--pad) * 2);
+    border: 2px solid var(--brand); color: var(--brand);
+    border-radius: 4px; background-color: white;
+  }
+  .theme-b { --brand: #7a1f1f }   /* retints every chip inside */
+
+  /* --- Tier 2: media queries --------------------------------------- */
+  #mqbox {
+    padding: 0.6rem; border: 2px solid #204060;
+    background-color: gold; color: black;
+  }
+  #mqbox .wide-label { display: none }
+  @media (min-width: 600px) {
+    #mqbox { background-color: #4a90d9; color: white }
+    #mqbox .narrow-label { display: none }
+    #mqbox .wide-label { display: inline }
+  }
+
+  /* --- Tier 2: viewport units and calc ----------------------------- */
+  /* Note: calc(50vw - 2rem) would MIX units - that is calc() stage 2
+   * territory and (correctly) falls back. Same-unit calc works. */
+  .vwbar {
+    background-color: #2a7a2a; color: white;
+    padding: 2px 6px; margin-bottom: 4px;
+    width: calc(25vw + 25vw);
+  }
 </style>
 </head>
 <body>
@@ -207,6 +242,41 @@ this long line wraps and collapses     space   runs</div></div>
   <h2>6. word-spacing</h2>
   <p>normal: the quick brown fox jumps over the lazy dog</p>
   <p class="wsp">10px extra: the quick brown fox jumps over the lazy dog</p>
+</section>
+
+<section>
+  <h2>7. Custom properties &amp; var()</h2>
+  <p>All chips share one rule using <code>var(--brand)</code> and
+     <code>calc(var(--pad) * 2)</code>; the second group only redefines
+     <code>--brand</code>:</p>
+  <p>
+    <span class="token-chip">navy theme</span>
+    <span class="token-chip">tokens</span>
+    <span class="theme-b">
+      <span class="token-chip">dark-red theme</span>
+      <span class="token-chip">same rule</span>
+    </span>
+  </p>
+</section>
+
+<section>
+  <h2>8. Media queries</h2>
+  <div id="mqbox">
+    <span class="narrow-label">NARROW: window is under 600px, so this
+      box is gold.</span>
+    <span class="wide-label">WIDE: window is 600px or more, so this box
+      is steel blue.</span>
+  </div>
+  <p class="note">Resize the window across 600px - the box restyles
+     live (@media min-width + restyle-on-resize).</p>
+</section>
+
+<section>
+  <h2>9. Viewport units &amp; calc()</h2>
+  <div class="vwbar">width: calc(25vw + 25vw)</div>
+  <p class="note">The green bar is always exactly half the window
+     width - it tracks resizes. (The chips in section 7 use calc()
+     with var() for their padding.)</p>
 </section>
 
 </main>

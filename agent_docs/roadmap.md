@@ -93,6 +93,15 @@ HTML/CSS stop degrading:
 
 ## Tier 2 — design tokens and responsiveness (each M)
 
+**Status: COMPLETE (2026-07-12).** var()/custom properties, conditional
+@media (min/max-width/height incl. restyle-on-resize), vw/vh/vmin/vmax
+and calc() stage 1 all landed, one commit each. calc() stage 2
+(percentage mixing) remains open as planned. Tests: modern-7..10 in
+tests/modern.test. Implementation notes worth knowing: var() rides the
+duplicate-declaration fallback exactly as predicted below; the
+function-token lexer needed a nesting fix for calc((a+b)*2); media
+query + viewport-unit restyles share one ConfigureNotify hook.
+
 1. **Custom properties + `var()`** [M: 500–900] — store `--x`
    declarations as raw text; give each node a copy-on-write inherited
    map; at computed-value time, substitute textually and re-parse the
