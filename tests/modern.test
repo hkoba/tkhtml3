@@ -23,6 +23,8 @@
 #     modern-6.*  word-spacing (letter-spacing is still unrendered -
 #                 see the audit note in agent_docs/roadmap.md).
 #
+#     modern-7.*  CSS custom properties ("--x") and var().
+#
 # Note: when testing with properties, prefer 'color' - the initial value
 # of e.g. 'border-top-width' is "medium" (2px), which is easy to confuse
 # with a test value.
@@ -394,5 +396,104 @@ tcltest::test modern-6.0 {word-spacing adds to each space} -body {
   # two spaces, 10px extra each
   expr {$w(ws) - $w(nm)}
 } -result {20}
+
+#--------------------------------------------------------------------------
+# modern-7.*: CSS custom properties + var().
+#
+tcltest::test modern-7.0 {basic var() substitution} -body {
+  .h reset
+  .h style { :root { --main: red } #a { color: var(--main) } }
+  .h parse -final {<body><div id="a">x</div></body>}
+  property [idnode a] color
+} -result {red}
+
+tcltest::test modern-7.1 {custom properties inherit and can be overridden} -body {
+  .h reset
+  .h style {
+    :root { --main: red }
+    #b { --main: blue }
+    span { color: var(--main) }
+  }
+  .h parse -final {<body>
+    <div><span id="s1">root value</span></div>
+    <div id="b"><span id="s2">overridden</span></div>
+  </body>}
+  list [property [idnode s1] color] [property [idnode s2] color]
+} -result {red blue}
+
+tcltest::test modern-7.2 {var() fallback value} -body {
+  .h reset
+  .h style { #c { color: var(--missing, green) } }
+  .h parse -final {<body><div id="c">x</div></body>}
+  property [idnode c] color
+} -result {green}
+
+tcltest::test modern-7.3 {failed substitution falls back to earlier declaration} -body {
+  .h reset
+  .h style { #d { color: purple; color: var(--missing) } }
+  .h parse -final {<body><div id="d">x</div></body>}
+  property [idnode d] color
+} -result {purple}
+
+tcltest::test modern-7.4 {var() inside a shorthand} -body {
+  .h reset
+  .h style {
+    :root { --main: red }
+    #e { border: 2px solid var(--main) }
+  }
+  .h parse -final {<body><div id="e">x</div></body>}
+  list [property [idnode e] border-top-color] \
+       [property [idnode e] border-top-width]
+} -result {red 2px}
+
+tcltest::test modern-7.5 {var() holding a length, combined with rem} -body {
+  .h reset
+  .h style {
+    :root { --size: 5rem; font-size: 10px }
+    #f { width: var(--size); display: block }
+  }
+  .h parse -final {<body><div id="f">x</div></body>}
+  property [idnode f] width
+} -result {50px}
+
+tcltest::test modern-7.6 {var() referencing another custom property} -body {
+  .h reset
+  .h style {
+    :root { --main: red; --alias: var(--main) }
+    #g { color: var(--alias) }
+  }
+  .h parse -final {<body><div id="g">x</div></body>}
+  property [idnode g] color
+} -result {red}
+
+tcltest::test modern-7.7 {style attribute beats rules for custom properties} -body {
+  .h reset
+  .h style {
+    :root { --main: red }
+    #h { --main: yellow }
+    .cls { --main: teal }
+    #h span { color: var(--main) }
+  }
+  .h parse -final {<body>
+    <div id="h" class="cls" style="--main: orange"><span id="s">x</span></div>
+  </body>}
+  property [idnode s] color
+} -result {orange}
+
+tcltest::test modern-7.8 {custom property declared and used in a style attribute} -body {
+  .h reset
+  .h parse -final {<body><div id="i" style="--z: navy; color: var(--z)">x</div></body>}
+  property [idnode i] color
+} -result {navy}
+
+tcltest::test modern-7.9 {reference cycles are rejected, not fatal} -body {
+  .h reset
+  .h style {
+    :root { --a: var(--b); --b: var(--a) }
+    #j { color: purple; color: var(--a) }
+  }
+  .h parse -final {<body><div id="j">x</div></body>}
+  property [idnode j] color
+} -result {purple}
 
 finish_test

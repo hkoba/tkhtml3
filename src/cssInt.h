@@ -120,6 +120,30 @@ typedef unsigned int u32;
 
 #define CSS_SELECTOR_NEVERMATCH 43
 
+/*
+ * Out-of-band "property ids" used in CssPropertySet entries (Tier 2 -
+ * CSS custom properties). Both store a CSS_TYPE_RAW property whose
+ * zVal is the complete "name:value" declaration text.
+ *
+ *   CUSTOMDECL: a custom property declaration ("--x: ..."). Cascaded
+ *               separately by customPropsCascade() in css.c.
+ *   VARDECL:    an ordinary declaration whose value contains var().
+ *               Substituted + re-parsed per element at computed-value
+ *               time by applyVarDeclaration() in css.c.
+ */
+#define CSS_PROPERTY_CUSTOMDECL  -2
+#define CSS_PROPERTY_VARDECL     -3
+
+/*
+ * The resolved custom-property map of an element: its own "--x"
+ * declarations merged over the parent's map. Elements that declare
+ * nothing share the parent's map (reference counted).
+ */
+struct CssCustomMap {
+    int nRef;
+    Tcl_HashTable h;             /* name ("--x") -> (char *)value */
+};
+
 
 /*
  * Before they are passed to the lemon-generated parser, the tokenizer

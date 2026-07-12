@@ -1025,7 +1025,8 @@ propertySetAdd(p, i, v)
 {
     int nBytes;
 
-    assert( i<=CSS_PROPERTY_MAX_PROPERTY && i>=0 );
+    assert( i<=CSS_PROPERTY_MAX_PROPERTY );
+    assert( i>=0 || i==CSS_PROPERTY_CUSTOMDECL || i==CSS_PROPERTY_VARDECL );
     assert(!p->a || p->n > 0);
 
     /* Note: We used to avoid inserting duplicate properties into a
@@ -1078,7 +1079,7 @@ propertyFree(CssProperty *p){
  *
  *--------------------------------------------------------------------------
  */
-static void 
+static void
 propertySetFree(CssPropertySet *p){
     int i;
     if( !p ) return;
@@ -1087,6 +1088,274 @@ propertySetFree(CssPropertySet *p){
     }
     HtmlFree(p->a);
     HtmlFree(p);
+}
+
+/*--------------------------------------------------------------------------
+ * CSS custom properties ("--x") and var() references.
+ *
+ * Custom property declarations are stored as raw "name:value" text
+ * (CSS_PROPERTY_CUSTOMDECL entries). During styling,
+ * customPropsCascade() resolves the winning value of every custom
+ * property visible on an element into a CssCustomMap, merging the
+ * parent's map (custom properties inherit); elements that declare
+ * nothing simply take a reference to the parent's map.
+ *
+ * Ordinary declarations whose value mentions var() are stored as raw
+ * text too (CSS_PROPERTY_VARDECL entries) and are substituted +
+ * re-parsed per element by applyVarDeclaration(). A substitution
+ * failure (unknown variable without fallback, cycle) leaves the
+ * declaration unapplied, so the cascade falls back to an earlier
+ * declaration - consistent with how this engine treats all other
+ * invalid values.
+ *--------------------------------------------------------------------------
+ */
+
+/* Create a CSS_TYPE_RAW property holding "name:value" in one
+ * allocation. pName/pValue are the raw declaration tokens.
+ */
+static CssProperty *
+declarationToProperty(pName, pValue)
+    CssToken *pName;
+    CssToken *pValue;
+{
+    CssProperty *pProp;
+    char *z;
+    int nByte = sizeof(CssProperty) + pName->n + 1 + pValue->n + 1;
+
+    pProp = (CssProperty *)HtmlAlloc("CssProperty", nByte);
+    pProp->eType = CSS_TYPE_RAW;
+    z = (char *)&pProp[1];
+    pProp->v.zVal = z;
+    memcpy(z, pName->z, pName->n);
+    z[pName->n] = ':';
+    memcpy(&z[pName->n + 1], pValue->z, pValue->n);
+    z[pName->n + 1 + pValue->n] = '\0';
+    return pProp;
+}
+
+/* True if the text contains a var(...) reference. The "var" must not
+ * be preceded by an identifier character (so "somevar(" is not one).
+ */
+static int
+containsVarRef(z, n)
+    const char *z;
+    int n;
+{
+    int i;
+    for (i = 0; i + 4 <= n; i++) {
+        if ((z[i] == 'v' || z[i] == 'V') && 0 == strnicmp(&z[i], "var(", 4)) {
+            if (i > 0) {
+                unsigned char cPrev = (unsigned char)z[i-1];
+                if (isalnum(cPrev) || cPrev == '-' || cPrev == '_') continue;
+            }
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static CssCustomMap *
+customMapNew()
+{
+    CssCustomMap *p = HtmlNew(CssCustomMap);
+    p->nRef = 1;
+    Tcl_InitHashTable(&p->h, TCL_STRING_KEYS);
+    return p;
+}
+
+void
+HtmlCssCustomMapRelease(pMap)
+    CssCustomMap *pMap;
+{
+    if (!pMap) return;
+    pMap->nRef--;
+    assert(pMap->nRef >= 0);
+    if (pMap->nRef == 0) {
+        Tcl_HashEntry *pEntry;
+        Tcl_HashSearch search;
+        for (
+            pEntry = Tcl_FirstHashEntry(&pMap->h, &search);
+            pEntry;
+            pEntry = Tcl_NextHashEntry(&search)
+        ) {
+            HtmlFree(Tcl_GetHashValue(pEntry));
+        }
+        Tcl_DeleteHashTable(&pMap->h);
+        HtmlFree(pMap);
+    }
+}
+
+/* Insert name (nName bytes) -> value (nValue bytes) if the name is not
+ * present yet ("first writer wins" - callers feed declarations in
+ * decreasing priority order).
+ */
+static void
+customMapInsert(pMap, zName, nName, zValue, nValue)
+    CssCustomMap *pMap;
+    const char *zName;
+    int nName;
+    const char *zValue;
+    int nValue;
+{
+    char zKey[128];
+    int isNew;
+    Tcl_HashEntry *pEntry;
+    char *zCopy;
+
+    if (nName >= (int)sizeof(zKey)) return;
+    memcpy(zKey, zName, nName);
+    zKey[nName] = '\0';
+
+    pEntry = Tcl_CreateHashEntry(&pMap->h, zKey, &isNew);
+    if (!isNew) return;
+    zCopy = HtmlAlloc("CssCustomMap.value", nValue + 1);
+    memcpy(zCopy, zValue, nValue);
+    zCopy[nValue] = '\0';
+    Tcl_SetHashValue(pEntry, zCopy);
+}
+
+/* Add the CSS_PROPERTY_CUSTOMDECL entries of pSet to *ppMap (creating
+ * the map on first use). Entries are scanned in reverse so that within
+ * one declaration block the later declaration of a name wins; across
+ * calls the earlier (higher priority) call wins via customMapInsert().
+ */
+static void
+customsFromSet(ppMap, pSet)
+    CssCustomMap **ppMap;
+    CssPropertySet *pSet;
+{
+    int i;
+    for (i = pSet->n - 1; i >= 0; i--) {
+        const char *zDecl;
+        const char *zColon;
+        const char *zVal;
+        const char *zEnd;
+        if (pSet->a[i].eProp != CSS_PROPERTY_CUSTOMDECL) continue;
+        zDecl = pSet->a[i].pProp->v.zVal;
+        zColon = strchr(zDecl, ':');
+        if (!zColon) continue;
+        zVal = &zColon[1];
+        while (*zVal && isspace((unsigned char)*zVal)) zVal++;
+        zEnd = &zVal[strlen(zVal)];
+        while (zEnd > zVal && isspace((unsigned char)zEnd[-1])) zEnd--;
+        if (!*ppMap) *ppMap = customMapNew();
+        customMapInsert(*ppMap, zDecl, zColon - zDecl, zVal, zEnd - zVal);
+    }
+}
+
+/* True if pSet contains at least one custom property declaration. */
+static int
+propertySetHasCustoms(pSet)
+    CssPropertySet *pSet;
+{
+    int i;
+    for (i = 0; i < pSet->n; i++) {
+        if (pSet->a[i].eProp == CSS_PROPERTY_CUSTOMDECL) return 1;
+    }
+    return 0;
+}
+
+/* Substitute every var(...) reference in zIn using pMap. Returns an
+ * HtmlAlloc()ed string, or NULL if substitution fails (unknown
+ * variable without fallback, unbalanced parens, or a reference cycle -
+ * the recursion depth doubles as the cycle guard).
+ */
+static char *
+substituteVars(pMap, zIn, nDepth)
+    CssCustomMap *pMap;
+    const char *zIn;
+    int nDepth;
+{
+    Tcl_DString out;
+    const char *z = zIn;
+    int isFailed = 0;
+    char *zRet;
+
+    if (nDepth > 16) return 0;
+    Tcl_DStringInit(&out);
+
+    while (*z) {
+        int isRef = 0;
+        if ((z[0] == 'v' || z[0] == 'V') && 0 == strnicmp(z, "var(", 4)) {
+            isRef = 1;
+            if (z > zIn) {
+                unsigned char cPrev = (unsigned char)z[-1];
+                if (isalnum(cPrev) || cPrev == '-' || cPrev == '_') isRef = 0;
+            }
+        }
+        if (!isRef) {
+            Tcl_DStringAppend(&out, z, 1);
+            z++;
+            continue;
+        }
+
+        {
+            const char *zOpen = &z[4];
+            const char *zClose = 0;    /* matching ')' */
+            const char *zComma = 0;    /* first top-level ',' */
+            const char *q;
+            const char *zName;
+            const char *zNameEnd;
+            const char *zVal = 0;
+            int nNest = 0;
+
+            for (q = zOpen; *q; q++) {
+                if (*q == '(') nNest++;
+                else if (*q == ')') { if (nNest == 0) break; nNest--; }
+                else if (*q == ',' && nNest == 0 && !zComma) zComma = q;
+            }
+            if (!*q) { isFailed = 1; break; }
+            zClose = q;
+
+            zName = zOpen;
+            zNameEnd = zComma ? zComma : zClose;
+            while (zName<zNameEnd && isspace((unsigned char)*zName)) zName++;
+            while (zNameEnd>zName && isspace((unsigned char)zNameEnd[-1])) {
+                zNameEnd--;
+            }
+
+            if (pMap && zNameEnd > zName && (zNameEnd - zName) < 128) {
+                char zKey[128];
+                Tcl_HashEntry *pEntry;
+                memcpy(zKey, zName, zNameEnd - zName);
+                zKey[zNameEnd - zName] = '\0';
+                pEntry = Tcl_FindHashEntry(&pMap->h, zKey);
+                if (pEntry) zVal = (const char *)Tcl_GetHashValue(pEntry);
+            }
+
+            if (zVal) {
+                char *zSub = substituteVars(pMap, zVal, nDepth + 1);
+                if (!zSub) { isFailed = 1; break; }
+                Tcl_DStringAppend(&out, zSub, -1);
+                HtmlFree(zSub);
+            } else if (zComma) {
+                /* Fallback value after the first comma */
+                int nFb = zClose - (zComma + 1);
+                char *zFb = HtmlAlloc("var-fallback", nFb + 1);
+                char *zSub;
+                memcpy(zFb, zComma + 1, nFb);
+                zFb[nFb] = '\0';
+                zSub = substituteVars(pMap, zFb, nDepth + 1);
+                HtmlFree(zFb);
+                if (!zSub) { isFailed = 1; break; }
+                Tcl_DStringAppend(&out, zSub, -1);
+                HtmlFree(zSub);
+            } else {
+                isFailed = 1;
+                break;
+            }
+            z = zClose + 1;
+        }
+    }
+
+    if (isFailed) {
+        Tcl_DStringFree(&out);
+        return 0;
+    }
+    zRet = HtmlAlloc("substituteVars", Tcl_DStringLength(&out) + 1);
+    memcpy(zRet, Tcl_DStringValue(&out), Tcl_DStringLength(&out) + 1);
+    Tcl_DStringFree(&out);
+    return zRet;
 }
 
 /*
@@ -2701,6 +2970,35 @@ HtmlCssDeclaration(pParse, pProp, pExpr, isImportant)
         isImportant = 0;
     }
 
+    /* A custom property declaration ("--x: anything"). Store the raw
+     * "name:value" text - it cascades separately from ordinary
+     * properties (customPropsCascade()) and is consumed by var()
+     * references. Note: custom property names are case-sensitive.
+     */
+    if (pProp->n >= 2 && pProp->z[0] == '-' && pProp->z[1] == '-') {
+        ppPropertySet =
+            isImportant ? &pParse->pImportant : &pParse->pPropertySet;
+        if (!*ppPropertySet) *ppPropertySet = propertySetNew();
+        propertySetAdd(*ppPropertySet, CSS_PROPERTY_CUSTOMDECL,
+            declarationToProperty(pProp, pExpr));
+        return;
+    }
+
+    /* A declaration whose value contains a var() reference cannot be
+     * parsed until styling time, when the referenced custom properties
+     * are known (they vary per element). Store the raw "name:value"
+     * text; propertySetToPropertyValues() substitutes and re-parses it
+     * per element.
+     */
+    if (containsVarRef(pExpr->z, pExpr->n)) {
+        ppPropertySet =
+            isImportant ? &pParse->pImportant : &pParse->pPropertySet;
+        if (!*ppPropertySet) *ppPropertySet = propertySetNew();
+        propertySetAdd(*ppPropertySet, CSS_PROPERTY_VARDECL,
+            declarationToProperty(pProp, pExpr));
+        return;
+    }
+
     /* Resolve the property name. If we don't recognize it, then ignore the
      * declaration (CSS2 spec says to do this - besides, what else could we
      * do?).
@@ -3750,7 +4048,10 @@ HtmlCssInlineFree(pPropertySet)
  *
  *---------------------------------------------------------------------------
  */
-static void 
+static void applyVarDeclaration(
+    HtmlComputedValuesCreator *, int *, const char *);
+
+static void
 propertySetToPropertyValues(p, aPropDone, pSet)
     HtmlComputedValuesCreator *p;
     int *aPropDone;
@@ -3761,14 +4062,70 @@ propertySetToPropertyValues(p, aPropDone, pSet)
 
     for (i = pSet->n - 1; i >= 0; i--) {
         int eProp = pSet->a[i].eProp;
+
+        if (eProp == CSS_PROPERTY_VARDECL) {
+            applyVarDeclaration(p, aPropDone, pSet->a[i].pProp->v.zVal);
+            continue;
+        }
+        if (eProp == CSS_PROPERTY_CUSTOMDECL) {
+            /* Handled by customPropsCascade() */
+            continue;
+        }
+
 	/* eProp may be greater than MAX_PROPERTY if it stores a composite
 	 * property that Tkhtml doesn't handle. In this case just ignore it.
          */
-	if (eProp <= CSS_PROPERTY_MAX_PROPERTY && 0 == aPropDone[eProp]) {
+	if (eProp >= 0 &&
+            eProp <= CSS_PROPERTY_MAX_PROPERTY && 0 == aPropDone[eProp]) {
             if (0 == HtmlComputedValuesSet(p, eProp, pSet->a[i].pProp)) {
                 aPropDone[eProp] = 1;
             }
         }
+    }
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
+ * applyVarDeclaration --
+ *
+ *     zDecl is the raw "property:value" text of a declaration whose
+ *     value contains var() references. Substitute them using the
+ *     custom-property map of the node being styled, re-parse the
+ *     resulting declaration (which may be a shorthand) and feed the
+ *     parsed properties into the creator.
+ *
+ *     On substitution failure the declaration is simply not applied,
+ *     so an earlier declaration of the same property gets its chance
+ *     (the regular invalid-value fallback of this engine).
+ *
+ *---------------------------------------------------------------------------
+ */
+static void
+applyVarDeclaration(p, aPropDone, zDecl)
+    HtmlComputedValuesCreator *p;
+    int *aPropDone;
+    const char *zDecl;
+{
+    HtmlElementNode *pElem = HtmlNodeAsElement(p->pNode);
+    CssCustomMap *pMap = pElem ? pElem->pCustomMap : 0;
+    CssPropertySet *pSet = 0;
+    char *zSub;
+
+    zSub = substituteVars(pMap, zDecl, 0);
+    if (!zSub) return;
+    if (containsVarRef(zSub, strlen(zSub))) {
+        /* A var() survived substitution (e.g. spliced from a string
+         * literal). Refuse it - guarantees termination. */
+        HtmlFree(zSub);
+        return;
+    }
+
+    HtmlCssInlineParse(p->pTree, -1, zSub, &pSet);
+    HtmlFree(zSub);
+    if (pSet) {
+        propertySetToPropertyValues(p, aPropDone, pSet);
+        HtmlCssInlineFree(pSet);
     }
 }
 
@@ -3964,43 +4321,28 @@ nextRule(apRule, n)
  *
  *--------------------------------------------------------------------------
  */
-void 
-HtmlCssStyleSheetApply(pTree, pNode)
-    HtmlTree *pTree; 
-    HtmlNode *pNode; 
+/* The two hard coded constants mentioned above */
+#define MAX_CLASSES    126
+#define MAX_CLASS_NAME 128
+
+/*
+ * Fill apRule[] (size MAX_CLASSES+2) with the heads of every rule list
+ * that may apply to pNode: the universal list, the by-tag list, the
+ * by-id list and one list per class. Returns the number of entries.
+ * This is called twice per node: once for the custom-property cascade
+ * and once for the ordinary property cascade (nextRule() consumes the
+ * array).
+ */
+static int
+collectRuleLists(pStyle, pNode, apRule)
+    CssStyleSheet *pStyle;
+    HtmlNode *pNode;
+    CssRule **apRule;
 {
-
-    /* The two hard coded constants mentioned above */
-    #define MAX_CLASSES    126
-    #define MAX_CLASS_NAME 128
-
-    CssStyleSheet *pStyle = pTree->pStyle;    /* Stylesheet config */
-    CssRule *pRule;                           /* Iterator variable */
-
-    /* Boolean: set after considering the inline-style information */
-    int isStyleDone = 0;
-
-    HtmlComputedValuesCreator sCreator;
-
-    /* The array aPropDone is large enough to contain an entry for each
-     * property recognized by the CSS parser (approx 110, includes many that
-     * Tkhtml does not use). After a property value is successfully written
-     * into sCreator, the matching aPropDone entry is set to true.
-     */
-    int aPropDone[CSS_PROPERTY_MAX_PROPERTY + 1];
-
     Tcl_HashEntry *pEntry;
     char const *zClassAttr;            /* Value of node "class" attribute */
     char const *zIdAttr;               /* Value of node "id" attribute */
-
-    CssRule *apRule[MAX_CLASSES + 2];  /* Array of applicable rules lists. */
     int npRule;
-
-    int nSelectorMatch = 0;
-    int nSelectorTest = 0;
-
-    HtmlElementNode *pElem = HtmlNodeAsElement(pNode);
-    assert(pElem);
 
     /* The universal rules list applies to all nodes */
     apRule[0] = pStyle->pUniversalRules;
@@ -4042,7 +4384,107 @@ HtmlCssStyleSheetApply(pTree, pNode)
             }
         }
     }
-    
+
+    return npRule;
+}
+
+/*
+ * Resolve the custom properties ("--x") visible on pNode and store the
+ * result in pElem->pCustomMap. The style attribute wins, then matching
+ * rules in priority order; names the element does not set itself are
+ * inherited from the parent's map. Elements that declare nothing share
+ * the parent's map. Runs before the ordinary cascade because any
+ * ordinary declaration may reference the variables through var().
+ */
+static void
+customPropsCascade(pTree, pNode, apRule, npRule)
+    HtmlTree *pTree;
+    HtmlNode *pNode;
+    CssRule **apRule;
+    int npRule;
+{
+    HtmlElementNode *pElem = (HtmlElementNode *)pNode;
+    HtmlNode *pParent = HtmlNodeParent(pNode);
+    CssCustomMap *pParentMap = 0;
+    CssCustomMap *pNew = 0;
+    CssRule *pRule;
+
+    if (pParent) {
+        pParentMap = ((HtmlElementNode *)pParent)->pCustomMap;
+    }
+
+    if (pElem->pStyle) {
+        customsFromSet(&pNew, pElem->pStyle);
+    }
+    for (
+        pRule = nextRule(apRule, npRule);
+        pRule;
+        pRule = nextRule(apRule, npRule)
+    ) {
+        if (!propertySetHasCustoms(pRule->pPropertySet)) continue;
+        if (!HtmlCssSelectorTest(pRule->pSelector, pNode, 0)) continue;
+        customsFromSet(&pNew, pRule->pPropertySet);
+    }
+
+    if (pNew) {
+        /* Inherit the names this element does not set itself */
+        if (pParentMap) {
+            Tcl_HashEntry *pEntry;
+            Tcl_HashSearch search;
+            for (
+                pEntry = Tcl_FirstHashEntry(&pParentMap->h, &search);
+                pEntry;
+                pEntry = Tcl_NextHashEntry(&search)
+            ) {
+                const char *zName = Tcl_GetHashKey(&pParentMap->h, pEntry);
+                const char *zVal = (const char *)Tcl_GetHashValue(pEntry);
+                customMapInsert(pNew, zName, strlen(zName), zVal,strlen(zVal));
+            }
+        }
+    } else if (pParentMap) {
+        pNew = pParentMap;
+        pNew->nRef++;
+    }
+
+    HtmlCssCustomMapRelease(pElem->pCustomMap);
+    pElem->pCustomMap = pNew;
+}
+
+void
+HtmlCssStyleSheetApply(pTree, pNode)
+    HtmlTree *pTree;
+    HtmlNode *pNode;
+{
+    CssStyleSheet *pStyle = pTree->pStyle;    /* Stylesheet config */
+    CssRule *pRule;                           /* Iterator variable */
+
+    /* Boolean: set after considering the inline-style information */
+    int isStyleDone = 0;
+
+    HtmlComputedValuesCreator sCreator;
+
+    /* The array aPropDone is large enough to contain an entry for each
+     * property recognized by the CSS parser (approx 110, includes many that
+     * Tkhtml does not use). After a property value is successfully written
+     * into sCreator, the matching aPropDone entry is set to true.
+     */
+    int aPropDone[CSS_PROPERTY_MAX_PROPERTY + 1];
+
+    CssRule *apRule[MAX_CLASSES + 2];  /* Array of applicable rules lists. */
+    int npRule;
+
+    int nSelectorMatch = 0;
+    int nSelectorTest = 0;
+
+    HtmlElementNode *pElem = HtmlNodeAsElement(pNode);
+    assert(pElem);
+
+    /* Cascade the custom properties first - var() references in the
+     * ordinary declarations below depend on the complete map. */
+    npRule = collectRuleLists(pStyle, pNode, apRule);
+    customPropsCascade(pTree, pNode, apRule, npRule);
+
+    npRule = collectRuleLists(pStyle, pNode, apRule);
 
     /* Initialise aPropDone and sCreator */
     HtmlComputedValuesInit(pTree, pNode, 0, &sCreator);
@@ -4789,12 +5231,18 @@ HtmlCssStyleConfigDump(clientData, interp, objc, objv)
                 if (isRequireSemi) {
                     Tcl_AppendToObj(p, "; ", 2);
                 }
-                zPropVal = HtmlPropertyToString(pProp, &zFree);
-                Tcl_AppendToObj(p, HtmlCssPropertyToString(eProp), -1);
-                Tcl_AppendToObj(p, ":", 1);
-                Tcl_AppendToObj(p, zPropVal, -1);
+                if (eProp < 0) {
+                    /* Custom property or var()-pending declaration:
+                     * zVal is the complete "name:value" text. */
+                    Tcl_AppendToObj(p, pProp->v.zVal, -1);
+                } else {
+                    zPropVal = HtmlPropertyToString(pProp, &zFree);
+                    Tcl_AppendToObj(p, HtmlCssPropertyToString(eProp), -1);
+                    Tcl_AppendToObj(p, ":", 1);
+                    Tcl_AppendToObj(p, zPropVal, -1);
+                    if (zFree) HtmlFree(zFree);
+                }
                 isRequireSemi = 1;
-                if (zFree) HtmlFree(zFree);
             }
         }
         Tcl_ListObjAppendElement(0, pList, p);
@@ -4872,11 +5320,25 @@ HtmlCssInlineQuery(interp, pPropertySet, pArg)
             Tcl_Obj *pRet = Tcl_NewObj();
             for (ii = 0; ii < pPropertySet->n; ii++) {
                 char *zFree = 0;
-                char *zProp = HtmlPropertyToString(
+                char *zProp;
+                int eProp = pPropertySet->a[ii].eProp;
+                if (eProp < 0) {
+                    /* Custom property or var()-pending declaration:
+                     * zVal is "name:value" - split it for the list. */
+                    const char *zDecl = pPropertySet->a[ii].pProp->v.zVal;
+                    const char *zColon = strchr(zDecl, ':');
+                    if (!zColon) continue;
+                    Tcl_ListObjAppendElement(0, pRet,
+                        Tcl_NewStringObj(zDecl, zColon - zDecl));
+                    Tcl_ListObjAppendElement(0, pRet,
+                        Tcl_NewStringObj(zColon + 1, -1));
+                    continue;
+                }
+                zProp = HtmlPropertyToString(
                     pPropertySet->a[ii].pProp, &zFree
                 );
                 Tcl_ListObjAppendElement(0, pRet, Tcl_NewStringObj(
-                    HtmlCssPropertyToString(pPropertySet->a[ii].eProp), -1
+                    HtmlCssPropertyToString(eProp), -1
                 ));
                 Tcl_ListObjAppendElement(0, pRet, Tcl_NewStringObj(zProp, -1));
                 HtmlFree(zFree);

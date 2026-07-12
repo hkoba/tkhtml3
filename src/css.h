@@ -66,6 +66,10 @@ typedef struct CssProperty CssProperty;
 typedef struct CssDynamic CssDynamic;
 
 typedef struct CssPropertySet CssPropertySet;
+typedef struct CssCustomMap CssCustomMap;
+
+/* Release a reference to an element's custom-property map. */
+void HtmlCssCustomMapRelease(CssCustomMap *);
 
 /* Include html.h after we define our opaque types, because it includes
  * structures that contain pointers to them.

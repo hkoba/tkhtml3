@@ -233,10 +233,12 @@ HtmlNodeClearStyle(pTree, pElem)
         HtmlComputedValuesRelease(pTree, pElem->pPreviousValues);
         HtmlCssInlineFree(pElem->pStyle);
         HtmlCssFreeDynamics(pElem);
+        HtmlCssCustomMapRelease(pElem->pCustomMap);
         pElem->pStyle = 0;
         pElem->pPropertyValues = 0;
         pElem->pPreviousValues = 0;
         pElem->pDynamic = 0;
+        pElem->pCustomMap = 0;
         HtmlDelStackingInfo(pTree, pElem);
     }
     return 0;

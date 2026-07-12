@@ -366,6 +366,7 @@ struct HtmlElementNode {
     HtmlComputedValues *pPropertyValues;   /* Current CSS property values */
     HtmlComputedValues *pPreviousValues;   /* Previous CSS property values */
     CssDynamic *pDynamic;                  /* CSS dynamic conditions */
+    CssCustomMap *pCustomMap;              /* CSS custom properties (var()) */
     Tcl_Obj *pOverride;                    /* List of property overrides */
     HtmlNodeStack *pStack;                 /* Stacking context */
     HtmlNode *pBefore;                     /* Generated :before content */
