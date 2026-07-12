@@ -3306,7 +3306,11 @@ normalFlowLayoutNode(pLayout, pBox, pNode, pY, pContext, pNormal)
         pFlow = &FT_FLOAT;
     } else if (nodeIsReplaced(pNode)) {
         pFlow = &FT_BLOCK_REPLACED;
-    } else if (eDisplay == CSS_CONST_BLOCK || eDisplay == CSS_CONST_LIST_ITEM) {
+    } else if (
+        eDisplay == CSS_CONST_BLOCK || eDisplay == CSS_CONST_LIST_ITEM ||
+        eDisplay == CSS_CONST_FLEX   /* placeholder: block until the
+                                      * flex layout engine lands */
+    ) {
         pFlow = &FT_BLOCK;
         if (pV->eOverflow != CSS_CONST_VISIBLE) {
             pFlow = &FT_OVERFLOW;

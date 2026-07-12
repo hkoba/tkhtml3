@@ -2669,6 +2669,165 @@ static void propertySetAddShortcutBorderColor(p, prop, v)
     }
 }
 
+/*
+ *---------------------------------------------------------------------------
+ *
+ * flexLiteralProperty --
+ *
+ *     Synthesize a CssProperty from a literal value string ("0", "1",
+ *     "auto"). Used by the 'flex' shorthand, whose expansion invents
+ *     longhand values that do not appear in the declaration text.
+ *
+ *---------------------------------------------------------------------------
+ */
+static CssProperty *
+flexLiteralProperty(z)
+    const char *z;
+{
+    CssToken t;
+    t.z = z;
+    t.n = strlen(z);
+    return tokenToProperty(0, &t);
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
+ * propertySetAddShortcutFlex --
+ *
+ *     Expand the 'flex' shorthand (CSS Flexbox 7.1.1):
+ *
+ *         flex: none                        => 0 0 auto
+ *         flex: auto                        => 1 1 auto
+ *         flex: <grow> [<shrink>] [<basis>] => omitted shrink is 1,
+ *                                              omitted basis is 0
+ *         flex: <basis>                     => 1 1 <basis>
+ *
+ *     An unparseable item list is ignored wholesale (same policy as
+ *     the other shorthands).
+ *
+ *---------------------------------------------------------------------------
+ */
+static void
+propertySetAddShortcutFlex(p, v)
+    CssPropertySet *p;         /* Property set. */
+    CssToken *v;               /* Shorthand value. */
+{
+    const char *z = v->z;
+    const char *zEnd = z + v->n;
+    int n;
+    int i = 0;
+    int j;
+    CssProperty *apProp[4];
+    CssProperty *pGrow = 0;
+    CssProperty *pShrink = 0;
+    CssProperty *pBasis = 0;
+
+    memset(apProp, 0, sizeof(apProp));
+    while (z && i < 4) {
+        z = HtmlCssGetNextListItem(z, zEnd-z, &n);
+        if (z) {
+            CssToken token;
+            token.z = z;
+            token.n = n;
+            apProp[i] = tokenToProperty(0, &token);
+            i++;
+            z += n;
+        }
+    }
+    if (i == 0) return;
+
+    if (i == 1 && apProp[0]->eType == CSS_CONST_INHERIT) {
+        propertySetAdd(p, CSS_PROPERTY_FLEX_GROW, apProp[0]);
+        propertySetAdd(p, CSS_PROPERTY_FLEX_SHRINK, propertyDup(apProp[0]));
+        propertySetAdd(p, CSS_PROPERTY_FLEX_BASIS, propertyDup(apProp[0]));
+        return;
+    }
+
+    if (i == 1 && apProp[0]->eType == CSS_CONST_NONE) {
+        HtmlFree(apProp[0]);
+        pGrow = flexLiteralProperty("0");
+        pShrink = flexLiteralProperty("0");
+        pBasis = flexLiteralProperty("auto");
+    } else if (i == 1 && apProp[0]->eType == CSS_CONST_AUTO) {
+        HtmlFree(apProp[0]);
+        pGrow = flexLiteralProperty("1");
+        pShrink = flexLiteralProperty("1");
+        pBasis = flexLiteralProperty("auto");
+    } else if (apProp[0]->eType == CSS_TYPE_FLOAT && i <= 3) {
+        pGrow = apProp[0];
+        if (i >= 2 && apProp[1]->eType == CSS_TYPE_FLOAT) {
+            pShrink = apProp[1];
+            if (i == 3) pBasis = apProp[2];
+        } else if (i == 2) {
+            pBasis = apProp[1];
+        } else if (i == 3) {
+            /* three items, but the middle one is not a number */
+            for (j = 0; j < i; j++) HtmlFree(apProp[j]);
+            return;
+        }
+        if (!pShrink) pShrink = flexLiteralProperty("1");
+        if (!pBasis) pBasis = flexLiteralProperty("0");
+    } else if (i == 1) {
+        pBasis = apProp[0];
+        pGrow = flexLiteralProperty("1");
+        pShrink = flexLiteralProperty("1");
+    } else {
+        for (j = 0; j < i; j++) HtmlFree(apProp[j]);
+        return;
+    }
+
+    propertySetAdd(p, CSS_PROPERTY_FLEX_GROW, pGrow);
+    propertySetAdd(p, CSS_PROPERTY_FLEX_SHRINK, pShrink);
+    propertySetAdd(p, CSS_PROPERTY_FLEX_BASIS, pBasis);
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
+ * propertySetAddShortcutGap --
+ *
+ *     Expand 'gap: <row-gap> [<column-gap>]'. A single value sets
+ *     both gaps.
+ *
+ *---------------------------------------------------------------------------
+ */
+static void
+propertySetAddShortcutGap(p, v)
+    CssPropertySet *p;         /* Property set. */
+    CssToken *v;               /* Shorthand value. */
+{
+    const char *z = v->z;
+    const char *zEnd = z + v->n;
+    int n;
+    int i = 0;
+    CssProperty *apProp[3];
+
+    memset(apProp, 0, sizeof(apProp));
+    while (z && i < 3) {
+        z = HtmlCssGetNextListItem(z, zEnd-z, &n);
+        if (z) {
+            CssToken token;
+            token.z = z;
+            token.n = n;
+            apProp[i] = tokenToProperty(0, &token);
+            i++;
+            z += n;
+        }
+    }
+
+    if (i < 1 || i > 2) {
+        int j;
+        for (j = 0; j < i; j++) HtmlFree(apProp[j]);
+        return;
+    }
+    if (i == 1) {
+        apProp[1] = propertyDup(apProp[0]);
+    }
+    propertySetAdd(p, CSS_PROPERTY_ROW_GAP, apProp[0]);
+    propertySetAdd(p, CSS_PROPERTY_COLUMN_GAP, apProp[1]);
+}
+
 /*--------------------------------------------------------------------------
  *
  * selectorFree --
@@ -3346,6 +3505,12 @@ HtmlCssDeclaration(pParse, pProp, pExpr, isImportant)
             break;
         case CSS_SHORTCUTPROPERTY_LIST_STYLE:
             shortcutListStyle(pParse, *ppPropertySet, pExpr);
+            break;
+        case CSS_SHORTCUTPROPERTY_FLEX:
+            propertySetAddShortcutFlex(*ppPropertySet, pExpr);
+            break;
+        case CSS_SHORTCUTPROPERTY_GAP:
+            propertySetAddShortcutGap(*ppPropertySet, pExpr);
             break;
         case CSS_PROPERTY_CONTENT:
         case CSS_PROPERTY_COUNTER_INCREMENT:

@@ -281,6 +281,20 @@ struct HtmlComputedValues {
     unsigned char eOverflow;          /* 'overflow' */
     unsigned char eBoxSizing;         /* 'box-sizing' */
 
+    /* Flexbox (container: eFlexDirection..eAlignItems, gaps;
+     * item: eAlignSelf, iFlexGrow..iOrder). Grow/shrink factors are
+     * stored as the specified number * 100. */
+    unsigned char eFlexDirection;     /* 'flex-direction' */
+    unsigned char eJustifyContent;    /* 'justify-content' */
+    unsigned char eAlignItems;        /* 'align-items' */
+    unsigned char eAlignSelf;         /* 'align-self' */
+    int iFlexGrow;                    /* 'flex-grow'   (value * 100) */
+    int iFlexShrink;                  /* 'flex-shrink' (value * 100) */
+    int iFlexBasis;                   /* 'flex-basis'  (pixels, %, AUTO) */
+    int iOrder;                       /* 'order'       (integer) */
+    int iRowGap;                      /* 'row-gap'     (pixels) */
+    int iColumnGap;                   /* 'column-gap'  (pixels) */
+
     int iZIndex;                      /* 'z-index'        (integer, AUTO) */
 
     /* The Tkhtml specific properties */
@@ -399,7 +413,10 @@ struct HtmlComputedValuesCreator {
 #define PROP_MASK_TEXT_INDENT             PROP_MASK_BIT(28)
 #define PROP_MASK_WORD_SPACING            PROP_MASK_BIT(29)
 #define PROP_MASK_LETTER_SPACING          PROP_MASK_BIT(30)
-/* Bits 31-63 are free (the mask became 64-bit in 2026). */
+#define PROP_MASK_FLEX_BASIS              PROP_MASK_BIT(31)
+#define PROP_MASK_ROW_GAP                 PROP_MASK_BIT(32)
+#define PROP_MASK_COLUMN_GAP              PROP_MASK_BIT(33)
+/* Bits 34-63 are free (the mask became 64-bit in 2026). */
 
 /*
  * Pixel values in the HtmlComputedValues struct may also take the following

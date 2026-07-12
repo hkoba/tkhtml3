@@ -121,6 +121,10 @@ static PropertyDef propdef[] = {
   PROPDEF(ENUM, TEXT_TRANSFORM,        eTextTransform),
   PROPDEF(ENUM, UNICODE_BIDI,          eUnicodeBidi),
   PROPDEF(ENUM, VISIBILITY,            eVisibility),
+  PROPDEF(ENUM, FLEX_DIRECTION,        eFlexDirection),
+  PROPDEF(ENUM, JUSTIFY_CONTENT,       eJustifyContent),
+  PROPDEF(ENUM, ALIGN_ITEMS,           eAlignItems),
+  PROPDEF(ENUM, ALIGN_SELF,            eAlignSelf),
 
   /* Note: The CSS2 property 'border-spacing' can be set to
    * either a single or pair of length values. Only a single
@@ -160,6 +164,9 @@ static PropertyDef propdef[] = {
   PROPDEFM(LENGTH, WIDTH,                 iWidth,            PIXELVAL_AUTO),
   PROPDEFM(LENGTH, WORD_SPACING,          iWordSpacing,      PIXELVAL_NORMAL),
   PROPDEFM(LENGTH, LETTER_SPACING,        iLetterSpacing,    PIXELVAL_NORMAL),
+  PROPDEFM(LENGTH, FLEX_BASIS,            iFlexBasis,        PIXELVAL_AUTO),
+  PROPDEFM(LENGTH, ROW_GAP,               iRowGap,           0),
+  PROPDEFM(LENGTH, COLUMN_GAP,            iColumnGap,        0),
 
   PROPDEF(COLOR, BACKGROUND_COLOR,        cBackgroundColor),
   PROPDEF(COLOR, COLOR,                   cColor),
@@ -185,6 +192,9 @@ static PropertyDef propdef[] = {
 
   PROPDEF(CUSTOM, VERTICAL_ALIGN,            iVerticalAlign),
   PROPDEF(CUSTOM, LINE_HEIGHT,               iLineHeight),
+  PROPDEF(CUSTOM, FLEX_GROW,                 iFlexGrow),
+  PROPDEF(CUSTOM, FLEX_SHRINK,               iFlexShrink),
+  PROPDEF(CUSTOM, ORDER,                     iOrder),
 
   PROPDEF(CUSTOM, FONT_SIZE,                 fFont),
   PROPDEF(CUSTOM, FONT_WEIGHT,               fFont),
@@ -233,6 +243,12 @@ struct SizemaskDef {
   SZMASKDEF(WIDTH,                 SZ_INHERIT|SZ_PERCENT|SZ_AUTO),
   SZMASKDEF(LETTER_SPACING,        SZ_INHERIT|SZ_NORMAL|SZ_NEGATIVE),
   SZMASKDEF(WORD_SPACING,          SZ_INHERIT|SZ_NORMAL|SZ_NEGATIVE),
+  SZMASKDEF(FLEX_BASIS,            SZ_INHERIT|SZ_PERCENT|SZ_AUTO),
+  /* Gap percentages (rare; % of the content-box main size) are not
+   * supported in flexbox stage A - a % gap invalidates the
+   * declaration and falls back, per the usual degradation rule. */
+  SZMASKDEF(ROW_GAP,               SZ_INHERIT),
+  SZMASKDEF(COLUMN_GAP,            SZ_INHERIT),
 };
 
 static int propertyValuesSetFontSize(HtmlComputedValuesCreator*,CssProperty*);
@@ -243,6 +259,10 @@ static int propertyValuesSetFontFamily(HtmlComputedValuesCreator*,CssProperty*);
 static int propertyValuesSetFontWeight(HtmlComputedValuesCreator*,CssProperty*);
 
 static int propertyValuesSetContent(HtmlComputedValuesCreator*,CssProperty*);
+
+static int propertyValuesSetFlexGrow(HtmlComputedValuesCreator*,CssProperty*);
+static int propertyValuesSetFlexShrink(HtmlComputedValuesCreator*,CssProperty*);
+static int propertyValuesSetOrder(HtmlComputedValuesCreator*,CssProperty*);
 
 static int 
 propertyValuesSetAutoInteger(HtmlComputedValuesCreator*,CssProperty*,int *);
@@ -255,6 +275,10 @@ static Tcl_Obj *propertyValuesObjFontFamily(HtmlComputedValues*);
 static Tcl_Obj *propertyValuesObjFontWeight(HtmlComputedValues*);
 
 static Tcl_Obj *propertyValuesObjContent(HtmlComputedValues*);
+
+static Tcl_Obj *propertyValuesObjFlexGrow(HtmlComputedValues*);
+static Tcl_Obj *propertyValuesObjFlexShrink(HtmlComputedValues*);
+static Tcl_Obj *propertyValuesObjOrder(HtmlComputedValues*);
 
 #define CUSTOMDEF(x, y) {x, propertyValuesSet ## y, propertyValuesObj ## y}
 static struct CustomDef {
@@ -269,6 +293,9 @@ static struct CustomDef {
   CUSTOMDEF(CSS_PROPERTY_FONT_STYLE,     FontStyle),
   CUSTOMDEF(CSS_PROPERTY_FONT_FAMILY,    FontFamily),
   CUSTOMDEF(CSS_PROPERTY_CONTENT,        Content),
+  CUSTOMDEF(CSS_PROPERTY_FLEX_GROW,      FlexGrow),
+  CUSTOMDEF(CSS_PROPERTY_FLEX_SHRINK,    FlexShrink),
+  CUSTOMDEF(CSS_PROPERTY_ORDER,          Order),
 };
 
 static int inheritlist[] = {
@@ -748,7 +775,110 @@ propertyValuesSetAutoInteger(p, pProp, piVal)
         return 1;
     }
     return 0;
-} 
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
+ * propertyValuesSetFlexGrow --
+ * propertyValuesSetFlexShrink --
+ * propertyValuesSetOrder --
+ *
+ *     'flex-grow' and 'flex-shrink' accept a non-negative <number>,
+ *     stored as (value * 100) so that fractional factors like 0.5
+ *     survive integer storage. 'order' accepts an <integer> (may be
+ *     negative; non-integral numbers are a type mismatch).
+ *
+ * Results:
+ *     0 if the value is successfully set, 1 on type mismatch.
+ *
+ *---------------------------------------------------------------------------
+ */
+static int
+propertyValuesSetFlexGrow(p, pProp)
+    HtmlComputedValuesCreator *p;
+    CssProperty *pProp;
+{
+    if (pProp->eType == CSS_CONST_INHERIT) {
+        HtmlNode *pParent = p->pParent;
+        if (pParent) {
+            p->values.iFlexGrow = HtmlNodeComputedValues(pParent)->iFlexGrow;
+        }
+        return 0;
+    }
+    if (pProp->eType == CSS_TYPE_FLOAT && pProp->v.rVal >= 0.0) {
+        p->values.iFlexGrow = INTEGER(pProp->v.rVal * 100.0);
+        return 0;
+    }
+    return 1;
+}
+
+static int
+propertyValuesSetFlexShrink(p, pProp)
+    HtmlComputedValuesCreator *p;
+    CssProperty *pProp;
+{
+    if (pProp->eType == CSS_CONST_INHERIT) {
+        HtmlNode *pParent = p->pParent;
+        if (pParent) {
+            p->values.iFlexShrink =
+                HtmlNodeComputedValues(pParent)->iFlexShrink;
+        }
+        return 0;
+    }
+    if (pProp->eType == CSS_TYPE_FLOAT && pProp->v.rVal >= 0.0) {
+        p->values.iFlexShrink = INTEGER(pProp->v.rVal * 100.0);
+        return 0;
+    }
+    return 1;
+}
+
+static int
+propertyValuesSetOrder(p, pProp)
+    HtmlComputedValuesCreator *p;
+    CssProperty *pProp;
+{
+    if (pProp->eType == CSS_CONST_INHERIT) {
+        HtmlNode *pParent = p->pParent;
+        if (pParent) {
+            p->values.iOrder = HtmlNodeComputedValues(pParent)->iOrder;
+        }
+        return 0;
+    }
+    if (pProp->eType == CSS_TYPE_FLOAT) {
+        int iVal = (int)pProp->v.rVal;
+        if ((double)iVal == pProp->v.rVal) {
+            p->values.iOrder = iVal;
+            return 0;
+        }
+    }
+    return 1;
+}
+
+static Tcl_Obj *
+propertyValuesObjFlexGrow(p)
+    HtmlComputedValues *p;
+{
+    char zBuf[64];
+    sprintf(zBuf, "%.12g", ((double)p->iFlexGrow) / 100.0);
+    return Tcl_NewStringObj(zBuf, -1);
+}
+
+static Tcl_Obj *
+propertyValuesObjFlexShrink(p)
+    HtmlComputedValues *p;
+{
+    char zBuf[64];
+    sprintf(zBuf, "%.12g", ((double)p->iFlexShrink) / 100.0);
+    return Tcl_NewStringObj(zBuf, -1);
+}
+
+static Tcl_Obj *
+propertyValuesObjOrder(p)
+    HtmlComputedValues *p;
+{
+    return Tcl_NewIntObj(p->iOrder);
+}
 
 /*
  *---------------------------------------------------------------------------
@@ -2056,6 +2186,8 @@ getPrototypeCreator(pTree, pMask, piCopyBytes)
 	/* Initialise the CUSTOM properties. */
 	pValues->eVerticalAlign = CSS_CONST_BASELINE;
         pValues->iLineHeight = PIXELVAL_NORMAL;
+        pValues->iFlexShrink = 100;   /* 'flex-shrink' initial value 1.0 */
+        /* iFlexGrow and iOrder default to 0 (struct is zeroed) */
         propertyValuesSetFontSize(p, &Medium);
         p->fontKey.zFontFamily = "Helvetica";
 
@@ -2623,6 +2755,10 @@ setDisplay97(p)
         case CSS_CONST_INLINE_TABLE:
             p->values.eDisplay = CSS_CONST_TABLE;
             break;
+        case CSS_CONST_INLINE_FLEX:
+            /* Blockification per css-display-3: inline-flex -> flex */
+            p->values.eDisplay = CSS_CONST_FLEX;
+            break;
         case CSS_CONST_INLINE:
         case CSS_CONST_INLINE_BLOCK:
         case CSS_CONST_RUN_IN:
@@ -2692,7 +2828,10 @@ HtmlComputedValuesFinish(p)
         {PROP_MASK_BOTTOM,              OFFSET(position.iBottom)},
         {PROP_MASK_LEFT,                OFFSET(position.iLeft)},
         {PROP_MASK_RIGHT,               OFFSET(position.iRight)},
-        {PROP_MASK_TEXT_INDENT,         OFFSET(iTextIndent)}
+        {PROP_MASK_TEXT_INDENT,         OFFSET(iTextIndent)},
+        {PROP_MASK_FLEX_BASIS,          OFFSET(iFlexBasis)},
+        {PROP_MASK_ROW_GAP,             OFFSET(iRowGap)},
+        {PROP_MASK_COLUMN_GAP,          OFFSET(iColumnGap)}
     };
 #undef OFFSET
 

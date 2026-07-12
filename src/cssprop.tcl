@@ -77,6 +77,7 @@ E display               run-in compact marker table inline-table
 E display               table-caption table-row-group table-cell
 E display               table-header-group table-footer-group table-row 
 E display               table-column-group table-column inline-block
+E display               flex inline-flex
 E display               -tkhtml-inline-button
 E empty-cells           show hide
 E float                 none left right
@@ -98,6 +99,16 @@ E text-transform        none capitalize uppercase lowercase
 E unicode-bidi          normal embed bidi-override
 E visibility            visible hidden collapse
 E white-space           normal pre nowrap pre-wrap pre-line
+
+# Flexbox (stage A: single-line flex containers - see
+# agent_docs/roadmap.md Tier 3). The first value of each E line is
+# the initial value. 'baseline' alignment is accepted but rendered
+# as flex-start until stage B.
+E flex-direction        row row-reverse column column-reverse
+E justify-content       flex-start flex-end center space-between
+E justify-content       space-around space-evenly
+E align-items           stretch flex-start flex-end center baseline
+E align-self            auto stretch flex-start flex-end center baseline
 
 C text-top text-bottom 
 C thin medium thick
@@ -138,13 +149,16 @@ P widows width word-spacing z-index
 P border-top-left-radius border-top-right-radius
 P border-bottom-right-radius border-bottom-left-radius
 
+P flex-direction justify-content align-items align-self
+P flex-grow flex-shrink flex-basis order row-gap column-gap
+
 P -tkhtml-replacement-image
 P -tkhtml-ordered-list-start
 P -tkhtml-ordered-list-value
 
 S background border border-top border-right border-bottom border-left
 S border-color border-style border-width cue font padding outline margin
-S list-style border-radius
+S list-style border-radius flex gap
 
 # We treat property 'background-position' as a composite property that sets
 # invented properties background-position-x and background-position-y.
