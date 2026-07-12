@@ -13,6 +13,8 @@
 #
 #     modern-3.*  The rem unit (root-element-relative lengths).
 #
+#     modern-4.*  The currentColor keyword.
+#
 # Note: when testing with properties, prefer 'color' - the initial value
 # of e.g. 'border-top-width' is "medium" (2px), which is easy to confuse
 # with a test value.
@@ -258,6 +260,37 @@ tcltest::test modern-3.2 {rem works for border widths} -body {
   .h parse -final {<html><body><div id="d">x</div></body></html>}
   property [idnode d] border-top-width
 } -result {20px}
+
+#--------------------------------------------------------------------------
+# modern-4.*: currentColor.
+#
+tcltest::test modern-4.0 {currentColor resolves to the element's color} -body {
+  .h reset
+  .h style {
+    #a { color: red;
+         border-top-color: currentColor; background-color: currentColor }
+  }
+  .h parse -final {<body><div id="a">x</div></body>}
+  list [property [idnode a] border-top-color] \
+       [property [idnode a] background-color]
+} -result {red red}
+
+tcltest::test modern-4.1 {currentColor on color itself means inherit} -body {
+  .h reset
+  .h style {
+    #b { color: blue }
+    #b span { color: currentColor; border-top-color: currentColor }
+  }
+  .h parse -final {<body><div id="b"><span id="s">x</span></div></body>}
+  list [property [idnode s] color] [property [idnode s] border-top-color]
+} -result {blue blue}
+
+tcltest::test modern-4.2 {currentColor is case-insensitive} -body {
+  .h reset
+  .h style { #c { color: red; border-top-color: currentcolor } }
+  .h parse -final {<body><div id="c">x</div></body>}
+  property [idnode c] border-top-color
+} -result {red}
 
 tcltest::test modern-2.12 {:not with unsupported argument kills the ruleset only} -body {
   .h reset

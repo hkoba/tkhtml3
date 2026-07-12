@@ -1253,7 +1253,14 @@ dumpColorTable(pTree)
  *
  *---------------------------------------------------------------------------
  */
-static int 
+/* Sentinel HtmlColor for the CSS3 'currentColor' keyword. Color fields
+ * left pointing here are replaced by the computed value of 'color' in
+ * HtmlComputedValuesFinish(). The large initial refcount keeps
+ * decrementColorRef() from ever trying to free (or hash-delete) it.
+ */
+static HtmlColor sColorCurrent = { 1000000000, "currentColor", 0 };
+
+static int
 propertyValuesSetColor(p, pCVar, pProp)
     HtmlComputedValuesCreator *p;
     HtmlColor **pCVar;
@@ -1286,6 +1293,23 @@ propertyValuesSetColor(p, pCVar, pProp)
 
     zColor = HtmlCssPropertyGetString(pProp);
     if (!zColor || !zColor[0]) return 1;
+
+    /* CSS3 'currentColor'. On the 'color' property itself it means
+     * "inherit"; on every other color property it is resolved against
+     * the computed 'color' at HtmlComputedValuesFinish() time (via the
+     * sColorCurrent sentinel).
+     */
+    if (0 == stricmp(zColor, "currentcolor")) {
+        if (pCVar == &p->values.cColor) {
+            HtmlColor **pInherit =
+                (HtmlColor **)getInheritPointer(p, (unsigned char *)pCVar);
+            if (!pInherit) return 1;
+            cVal = *pInherit;
+        } else {
+            cVal = &sColorCurrent;
+        }
+        goto setcolor_out;
+    }
 
     pEntry = Tcl_CreateHashEntry(&pTree->aColor, zColor, &newEntry);
     if (newEntry) {
@@ -2714,8 +2738,32 @@ HtmlComputedValuesFinish(p)
         }
     }
 
+    /* Resolve the CSS3 'currentColor' keyword: any color field that was
+     * set to the sColorCurrent sentinel now takes the computed value of
+     * 'color'. ('currentColor' on the 'color' property itself was
+     * already handled, as inherit, in propertyValuesSetColor().)
+     */
+    {
+        HtmlColor **apCC[] = {
+            &p->values.cBackgroundColor,
+            &p->values.cBorderTopColor,
+            &p->values.cBorderRightColor,
+            &p->values.cBorderBottomColor,
+            &p->values.cBorderLeftColor,
+            &p->values.cOutlineColor,
+        };
+        int iCC;
+        for (iCC = 0; iCC < (int)(sizeof(apCC)/sizeof(apCC[0])); iCC++) {
+            if (*apCC[iCC] == &sColorCurrent) {
+                sColorCurrent.nRef--;
+                *apCC[iCC] = p->values.cColor;
+                p->values.cColor->nRef++;
+            }
+        }
+    }
+
     /* If no value has been assigned to any of the 'border-xxx-color'
-     * properties, then copy the value of the 'color' property. 
+     * properties, then copy the value of the 'color' property.
      */
     pColor = p->values.cColor;
     if (!p->values.cBorderTopColor) {
