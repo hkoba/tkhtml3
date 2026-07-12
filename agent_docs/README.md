@@ -16,6 +16,7 @@ Read these **before** modifying the corresponding area:
 | [host-application-contract.md](host-application-contract.md) | embed the widget, write a test harness, or wonder why "the browser part" doesn't happen by itself |
 | [testing.md](testing.md) | write or debug tests, set up CI, or need to see what the widget actually painted |
 | [history-and-pitfalls.md](history-and-pitfalls.md) | find a suspicious old test, an odd `#if 0`, or want to know which limitations are deliberate |
+| [roadmap.md](roadmap.md) | plan new feature work — modern CSS/HTML candidates (flexbox, grid, var(), media queries, ...) with size estimates, staging and exclusions |
 
 What these documents are **not**:
 
