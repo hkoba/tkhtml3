@@ -1,0 +1,96 @@
+# Test script for Tkhtml
+#
+# Tests for the "Tier 1 modern baseline pack" (see agent_docs/roadmap.md):
+#
+#     modern-1.*  HTML5 vocabulary: tags in tokenlist.txt + html.css rules
+#                 (previously unknown tags were silently dropped by the
+#                 parser), implicit </p> before structural elements, the
+#                 global [hidden] attribute.
+#
+proc sourcefile {file} {
+  set fname [file join [file dirname [info script]] $file]
+  uplevel #0 [list source $fname]
+}
+sourcefile common.tcl
+
+catch {destroy .h}
+html .h
+pack .h -fill both -expand 1
+update
+
+proc property {node prop} {
+  return [$node property $prop]
+}
+
+proc idnode {id} {
+  lindex [.h search "\[id=\"$id\"\]"] 0
+}
+
+#--------------------------------------------------------------------------
+# modern-1.*: HTML5 vocabulary.
+#
+tcltest::test modern-1.0 {section becomes a real node with display block} -body {
+  .h reset
+  .h parse -final {
+    <body><p id="one">para <mark id="m">hi</mark> text
+    <section id="s"><h2>head</h2></section></body>
+  }
+  set s [lindex [.h search section] 0]
+  list [$s tag] [property $s display] [[$s parent] tag]
+} -result {section block body}
+
+tcltest::test modern-1.1 {structural element implicitly closes an open <p>} -body {
+  set kids {}
+  foreach c [[idnode one] children] {
+    if {[$c tag] ne ""} { lappend kids [$c tag] }
+  }
+  set kids
+} -result {mark}
+
+tcltest::test modern-1.2 {phrasing element <mark> stays inside <p>} -body {
+  set m [idnode m]
+  list [[$m parent] tag] [property $m background-color]
+} -result {p yellow}
+
+tcltest::test modern-1.3 {template content is not displayed} -body {
+  .h reset
+  .h parse -final {<body><template id="t"><div>x</div></template></body>}
+  property [lindex [.h search template] 0] display
+} -result {none}
+
+tcltest::test modern-1.4 {global hidden attribute} -body {
+  .h reset
+  .h parse -final {<body><div hidden id="h">x</div><span hidden id="i">y</span></body>}
+  list [property [idnode h] display] [property [idnode i] display]
+} -result {none none}
+
+tcltest::test modern-1.5 {figure default margins} -body {
+  .h reset
+  .h parse -final {<body><figure id="f">x</figure></body>}
+  list [property [idnode f] display] [property [idnode f] margin-left]
+} -result {block 40px}
+
+tcltest::test modern-1.6 {nav/header/footer/main/aside/article are blocks} -body {
+  .h reset
+  .h parse -final {
+    <body><nav id="a">n</nav><header id="b">h</header><footer id="c">f</footer>
+    <main id="d">m</main><aside id="e">a</aside><article id="f">r</article></body>
+  }
+  set r {}
+  foreach id {a b c d e f} { lappend r [property [idnode $id] display] }
+  set r
+} -result {block block block block block block}
+
+tcltest::test modern-1.7 {previously-dead html.css rules now fire (del/ins/abbr)} -body {
+  .h reset
+  .h parse -final {<body><del id="d">a</del><ins id="i">b</ins></body>}
+  list [property [idnode d] text-decoration] [property [idnode i] text-decoration]
+} -result {line-through underline}
+
+tcltest::test modern-1.8 {dialog hidden unless open} -body {
+  .h reset
+  .h parse -final {<body><dialog id="d1">x</dialog><dialog open id="d2">y</dialog></body>}
+  list [property [idnode d1] display] [property [idnode d2] display]
+} -result {none block}
+
+finish_test

@@ -10,6 +10,7 @@ sourcefile style.test
 sourcefile dynamic.test
 sourcefile options.test
 sourcefile css3.test
+sourcefile modern.test
 
 finish_test
 

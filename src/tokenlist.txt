@@ -202,8 +202,57 @@ TAG nobr -flow inline
 TAG noembed                              
 TAG plaintext -content HtmlInlineContent             
 TAG wbr -content HtmlEmptyContent -flow inline
-TAG xmp 
-TAG bgsound -content HtmlEmptyContent 
+TAG xmp
+TAG bgsound -content HtmlEmptyContent
+
+#     HTML5 elements (added 2026). Without an entry here the parser drops
+#     the tag entirely (htmlparse.c ignores unknown markup in HTML mode).
+#
+#     Structural elements are "-flow block" so that they implicitly close
+#     an open <p> (see HtmlInlineContent); phrasing-level elements are
+#     "-flow inline" so that they do not. Display types are assigned in
+#     html.css.
+#
+TAG article -flow block
+TAG aside -flow block
+TAG details -flow block
+TAG dialog -flow block
+TAG figcaption -flow block
+TAG figure -flow block
+TAG footer -flow block
+TAG header -flow block
+TAG hgroup -flow block
+TAG main -flow block
+TAG nav -flow block
+TAG section -flow block
+TAG search -flow block
+TAG summary -flow block
+TAG audio -flow inline
+TAG bdi -flow inline
+TAG canvas -flow inline
+TAG data -flow inline
+TAG datalist -flow inline
+TAG mark -flow inline
+TAG meter -flow inline
+TAG output -flow inline
+TAG picture -flow inline
+TAG progress -flow inline
+TAG source -content HtmlEmptyContent -flow inline
+TAG template -flow inline
+TAG time -flow inline
+TAG track -content HtmlEmptyContent -flow inline
+TAG video -flow inline
+
+#     Pre-HTML5 elements that were missing from this table even though
+#     html.css already carries rules for some of them (ABBR, ACRONYM,
+#     DEL, INS -- those rules were dead until now).
+#
+TAG abbr -flow inline
+TAG acronym -flow inline
+TAG bdo -flow inline
+TAG del -flow inline
+TAG ins -flow inline
+TAG q -flow inline
 
 ###########################################################################
 # Below this line is the engine for processing the database declared 

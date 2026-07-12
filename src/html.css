@@ -9,6 +9,24 @@ BODY {
   margin:8px;
 }
 
+/* HTML5 elements. The tags themselves are declared in tokenlist.txt;
+ * without those entries the parser drops the tags and these rules can
+ * never match.
+ */
+ARTICLE, ASIDE, DETAILS, FIGCAPTION, FIGURE, FOOTER,
+HEADER, HGROUP, MAIN, NAV, SECTION, SEARCH, SUMMARY
+                { display: block }
+FIGURE          { margin: 1em 40px }
+MARK            { background-color: yellow; color: black }
+TEMPLATE, DATALIST, AUDIO { display: none }
+DIALOG          { display: none }
+DIALOG[open]    { display: block; border: 2px solid; padding: 1em }
+Q:before        { content: "\201C" }
+Q:after         { content: "\201D" }
+
+/* The global HTML5 "hidden" attribute. */
+[hidden]        { display: none }
+
 /* Rules for unordered-lists */
 LI                   { display: list-item }
 UL[type="square"]>LI { list-style-type : square } 
