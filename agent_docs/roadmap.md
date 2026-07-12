@@ -132,11 +132,13 @@ query + viewport-unit restyles share one ConfigureNotify hook.
 
 ## Tier 3 — flexbox (the centerpiece)
 
-* **Enabler side-quest: PROP_MASK redesign** [S–M] — the 32-bit
-  percentage mask has 31/32 bits taken (adding-css-properties.md), so
-  at most one more %-capable LENGTH property fits. Widen to 64 bits
-  or a per-property byte array first; that unblocks `flex-basis: %`,
-  `border-radius: %`, `background-size: %`. Mostly mechanical.
+* **Enabler side-quest: PROP_MASK redesign** [S–M] — **DONE
+  (2026-07-12)**: the percentage/em/ex/rem masks are now a 64-bit
+  `HtmlPropMask` (htmlprop.h); bits 31–63 free, added via
+  `PROP_MASK_BIT(n)`. Unblocks `flex-basis: %`, `border-radius: %`,
+  `background-size: %`. Turned out purely mechanical (~10 typed
+  declarations); the only incident was the stale-object trap now
+  recorded in testing.md.
 * **Stage A — single-line flex** [L: 1,200–1,800] —
   `display: flex | inline-flex` (new `display` enum values in
   cssprop.tcl: remember **regeneration renumbers every property id**,

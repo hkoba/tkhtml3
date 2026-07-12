@@ -25,6 +25,14 @@ typedef struct HtmlComputedValuesCreator HtmlComputedValuesCreator;
 typedef struct HtmlColor HtmlColor;
 typedef struct HtmlCounterList HtmlCounterList;
 
+/* The type used for the "value is a percentage" bitmask
+ * (HtmlComputedValues.mask) and for the deferred-unit masks
+ * (HtmlComputedValuesCreator.em_mask/ex_mask/rem_mask). All four masks
+ * index by the same PROP_MASK_XXX bits. It was a 32-bit unsigned int
+ * until 2026, when all 32 bits were in use; it is now 64-bit.
+ */
+typedef unsigned long long HtmlPropMask;
+
 typedef struct HtmlFont HtmlFont;
 typedef struct HtmlFontKey HtmlFontKey;
 typedef struct HtmlFontCache HtmlFontCache;
@@ -217,7 +225,7 @@ struct HtmlComputedValues {
     HtmlImage2 *imZoomedBackgroundImage;   /* MUST BE FIRST (see htmlhash.c) */
     int nRef;                              /* MUST BE FIRST (see htmlhash.c) */
 
-    unsigned int mask;
+    HtmlPropMask mask;
 
     unsigned char eDisplay;           /* 'display' */
     unsigned char eFloat;             /* 'float' */
@@ -329,9 +337,9 @@ struct HtmlComputedValuesCreator {
     HtmlTree *pTree;
     HtmlNode *pNode;                 /* Node to associate LOG with */
     HtmlNode *pParent;               /* Node to inherit from */
-    unsigned int em_mask;
-    unsigned int ex_mask;
-    unsigned int rem_mask;           /* Values relative to root font size */
+    HtmlPropMask em_mask;
+    HtmlPropMask ex_mask;
+    HtmlPropMask rem_mask;           /* Values relative to root font size */
     int eVerticalAlignPercent;       /* True if 'vertical-align' is a % */
     CssProperty *pDeleteList;
 
@@ -358,37 +366,40 @@ struct HtmlComputedValuesCreator {
  * HtmlComputedValues.iVerticalAlign should be interpreted as a constant value
  * (like an HtmlComputedValues.eXXX variable).
  */
-#define PROP_MASK_WIDTH                   0x00000001
-#define PROP_MASK_MIN_WIDTH               0x00000002
-#define PROP_MASK_MAX_WIDTH               0x00000004
-#define PROP_MASK_HEIGHT                  0x00000008
-#define PROP_MASK_MIN_HEIGHT              0x00000010
-#define PROP_MASK_MAX_HEIGHT              0x00000020
-#define PROP_MASK_MARGIN_TOP              0x00000040
-#define PROP_MASK_MARGIN_RIGHT            0x00000080
-#define PROP_MASK_MARGIN_BOTTOM           0x00000100
-#define PROP_MASK_MARGIN_LEFT             0x00000200
-#define PROP_MASK_PADDING_TOP             0x00000400
-#define PROP_MASK_PADDING_RIGHT           0x00000800
-#define PROP_MASK_PADDING_BOTTOM          0x00001000
-#define PROP_MASK_PADDING_LEFT            0x00002000
-#define PROP_MASK_VERTICAL_ALIGN          0x00004000
-#define PROP_MASK_BORDER_TOP_WIDTH        0x00008000
-#define PROP_MASK_BORDER_RIGHT_WIDTH      0x00010000
-#define PROP_MASK_BORDER_BOTTOM_WIDTH     0x00020000
-#define PROP_MASK_BORDER_LEFT_WIDTH       0x00040000
-#define PROP_MASK_LINE_HEIGHT             0x00080000
-#define PROP_MASK_BACKGROUND_POSITION_X   0x00100000
-#define PROP_MASK_BACKGROUND_POSITION_Y   0x00200000
-#define PROP_MASK_BORDER_SPACING          0x00400000
-#define PROP_MASK_OUTLINE_WIDTH           0x00800000
-#define PROP_MASK_TOP                     0x01000000
-#define PROP_MASK_BOTTOM                  0x02000000
-#define PROP_MASK_RIGHT                   0x04000000
-#define PROP_MASK_LEFT                    0x08000000
-#define PROP_MASK_TEXT_INDENT             0x10000000
-#define PROP_MASK_WORD_SPACING            0x20000000
-#define PROP_MASK_LETTER_SPACING          0x40000000
+#define PROP_MASK_BIT(n)                  (((HtmlPropMask)1) << (n))
+
+#define PROP_MASK_WIDTH                   PROP_MASK_BIT(0)
+#define PROP_MASK_MIN_WIDTH               PROP_MASK_BIT(1)
+#define PROP_MASK_MAX_WIDTH               PROP_MASK_BIT(2)
+#define PROP_MASK_HEIGHT                  PROP_MASK_BIT(3)
+#define PROP_MASK_MIN_HEIGHT              PROP_MASK_BIT(4)
+#define PROP_MASK_MAX_HEIGHT              PROP_MASK_BIT(5)
+#define PROP_MASK_MARGIN_TOP              PROP_MASK_BIT(6)
+#define PROP_MASK_MARGIN_RIGHT            PROP_MASK_BIT(7)
+#define PROP_MASK_MARGIN_BOTTOM           PROP_MASK_BIT(8)
+#define PROP_MASK_MARGIN_LEFT             PROP_MASK_BIT(9)
+#define PROP_MASK_PADDING_TOP             PROP_MASK_BIT(10)
+#define PROP_MASK_PADDING_RIGHT           PROP_MASK_BIT(11)
+#define PROP_MASK_PADDING_BOTTOM          PROP_MASK_BIT(12)
+#define PROP_MASK_PADDING_LEFT            PROP_MASK_BIT(13)
+#define PROP_MASK_VERTICAL_ALIGN          PROP_MASK_BIT(14)
+#define PROP_MASK_BORDER_TOP_WIDTH        PROP_MASK_BIT(15)
+#define PROP_MASK_BORDER_RIGHT_WIDTH      PROP_MASK_BIT(16)
+#define PROP_MASK_BORDER_BOTTOM_WIDTH     PROP_MASK_BIT(17)
+#define PROP_MASK_BORDER_LEFT_WIDTH       PROP_MASK_BIT(18)
+#define PROP_MASK_LINE_HEIGHT             PROP_MASK_BIT(19)
+#define PROP_MASK_BACKGROUND_POSITION_X   PROP_MASK_BIT(20)
+#define PROP_MASK_BACKGROUND_POSITION_Y   PROP_MASK_BIT(21)
+#define PROP_MASK_BORDER_SPACING          PROP_MASK_BIT(22)
+#define PROP_MASK_OUTLINE_WIDTH           PROP_MASK_BIT(23)
+#define PROP_MASK_TOP                     PROP_MASK_BIT(24)
+#define PROP_MASK_BOTTOM                  PROP_MASK_BIT(25)
+#define PROP_MASK_RIGHT                   PROP_MASK_BIT(26)
+#define PROP_MASK_LEFT                    PROP_MASK_BIT(27)
+#define PROP_MASK_TEXT_INDENT             PROP_MASK_BIT(28)
+#define PROP_MASK_WORD_SPACING            PROP_MASK_BIT(29)
+#define PROP_MASK_LETTER_SPACING          PROP_MASK_BIT(30)
+/* Bits 31-63 are free (the mask became 64-bit in 2026). */
 
 /*
  * Pixel values in the HtmlComputedValues struct may also take the following

@@ -74,7 +74,7 @@ struct PropertyDef {
     enum PropertyValueType eType;
     int eProp;
     int iOffset;
-    int mask;
+    HtmlPropMask mask;
     int iDefault;              /* For LENGTH and BORDERWIDTH */
 
     int setsizemask;           /* If eType==LENGTH, mask for SetSize() */
@@ -128,8 +128,9 @@ static PropertyDef propdef[] = {
    * the html 4.01 cellspacing attribute.
    */
   /* The radii use the BORDERWIDTH type: pixel lengths only, no mask
-   * bit required (all 32 PROP_MASK bits are in use). em/ex radii are
-   * rejected (the declaration falls back), % is not supported.
+   * bit required. em/ex radii are rejected (the declaration falls
+   * back), % is not supported. The mask is 64-bit now, so upgrading
+   * these to LENGTH is possible if %/em radii are ever wanted.
    */
   PROPDEF(BORDERWIDTH, BORDER_TOP_LEFT_RADIUS,     iBorderTopLeftRadius),
   PROPDEF(BORDERWIDTH, BORDER_TOP_RIGHT_RADIUS,    iBorderTopRightRadius),
@@ -1517,7 +1518,7 @@ static int
 propertyValuesSetLength(p, pIVal, em_mask, pProp, allowNegative)
     HtmlComputedValuesCreator *p;
     int *pIVal;
-    unsigned int em_mask;
+    HtmlPropMask em_mask;
     CssProperty *pProp;
     int allowNegative;
 {
@@ -1765,7 +1766,7 @@ propertyValuesSetVerticalAlign(p, pProp)
     HtmlComputedValuesCreator *p;
     CssProperty *pProp;
 {
-    static const unsigned int MASK = PROP_MASK_VERTICAL_ALIGN;
+    static const HtmlPropMask MASK = PROP_MASK_VERTICAL_ALIGN;
     int rc = 0;
 
     switch (pProp->eType) {
@@ -1851,7 +1852,7 @@ static int
 propertyValuesSetSize(p, pIVal, p_mask, pProp, allow_mask)
     HtmlComputedValuesCreator *p;
     int *pIVal;
-    unsigned int p_mask;
+    HtmlPropMask p_mask;
     CssProperty *pProp;
     unsigned int allow_mask;
 {
@@ -1959,7 +1960,7 @@ static int
 propertyValuesSetBorderWidth(p, pIVal, em_mask, pProp)
     HtmlComputedValuesCreator *p;
     int *pIVal;
-    unsigned int em_mask;
+    HtmlPropMask em_mask;
     CssProperty *pProp;
 {
     int eType = pProp->eType;
@@ -2028,10 +2029,10 @@ propertyValuesSetBorderWidth(p, pIVal, em_mask, pProp)
 static HtmlComputedValuesCreator *
 getPrototypeCreator(pTree, pMask, piCopyBytes)
     HtmlTree *pTree;
-    unsigned int *pMask;
+    HtmlPropMask *pMask;
     int *piCopyBytes;
 {
-    static int sMask = 0;
+    static HtmlPropMask sMask = 0;
     static int sCopyBytes = sizeof(HtmlComputedValues);
 
     if (0 == pTree->pPrototypeCreator) {
@@ -2143,7 +2144,7 @@ HtmlComputedValuesInit(pTree, pNode, pParent, p)
     HtmlComputedValues *pValues = &p->values;
     char *values = (char *)pValues;
 
-    unsigned int iCopyMask = 0;
+    HtmlPropMask iCopyMask = 0;
     int iCopyBytes = 0;
     HtmlComputedValuesCreator *pPrototype;
 
@@ -2663,7 +2664,7 @@ HtmlComputedValuesFinish(p)
 
 #define OFFSET(x) offsetof(HtmlComputedValues, x)
     struct EmExMap {
-        unsigned int mask;
+        HtmlPropMask mask;
         int offset;
     } emexmap[] = {
         {PROP_MASK_WIDTH,               OFFSET(iWidth)},
@@ -3560,7 +3561,7 @@ HtmlNodeGetProperty(interp, pProp, pValues)
         for (ii = 0; ii < 2; ii++) {
             int iVal = ii ? pValues->iBackgroundPositionY
                           : pValues->iBackgroundPositionX;
-            unsigned int mask = ii ? PROP_MASK_BACKGROUND_POSITION_Y
+            HtmlPropMask mask = ii ? PROP_MASK_BACKGROUND_POSITION_Y
                                    : PROP_MASK_BACKGROUND_POSITION_X;
             if (pValues->mask & mask) {
                 snprintf(zBuf, sizeof(zBuf), " %.12g%%", ((double)iVal)/100.0);

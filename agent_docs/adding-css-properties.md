@@ -41,10 +41,12 @@ Pick the type carefully:
 * `ENUM` — one `unsigned char` field, values validated against the E
   line, default = first E value. Cheapest option.
 * `LENGTH` — supports %, em, auto/none via `setsizemask`
-  (SZMASKDEF table), **but requires a dedicated `PROP_MASK_*` bit to
-  record "value is a percentage" — and 31 of the 32 bits are already
-  taken.** Do not plan more than one new %-capable length property
-  without redesigning the mask.
+  (SZMASKDEF table). Requires a dedicated `PROP_MASK_*` bit to record
+  "value is a percentage". The mask (`HtmlPropMask`, htmlprop.h) has
+  been 64-bit since 2026 — bits 31–63 are free; add new bits with the
+  `PROP_MASK_BIT(n)` macro. **After touching htmlprop.h, `rm bld/*.o`
+  first — the TEA Makefile has no header dependencies, and stale
+  objects with the old struct layout segfault at runtime.**
 * `BORDERWIDTH` — pixel lengths plus thin/medium/thick, works with
   `mask == 0`. `propertyValuesSetLength()` rejects em/ex when the mask
   is 0, which *invalidates the declaration* and lets the cascade fall

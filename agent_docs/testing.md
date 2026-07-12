@@ -90,6 +90,14 @@ Two Acid2 traits that look like bugs but are by design:
   inequalities (see modern-5.*) - absolute pixel heights of text
   depend on the fonts installed on the CI machine.
 
+## Stale-object trap
+
+The generated TEA Makefile in bld/ has **no header dependency
+tracking**: editing a struct in a header (e.g. htmlprop.h) recompiles
+only the .c files whose timestamps changed. The other objects keep the
+old struct layout and the widget segfaults somewhere unrelated at
+runtime. After any header change: `rm bld/*.o && make -C bld`.
+
 ## Version-skew trap
 
 A system-installed Tkhtml (e.g. the RPM) silently shadows your build:
