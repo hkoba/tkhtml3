@@ -57,6 +57,11 @@ options menu below.
 
 ## Tier 1 — modern baseline pack (sum ≈ M: 600–1,100 lines)
 
+**Status: COMPLETE (2026-07-12).** All seven items landed as one
+commit each (HTML5 vocabulary, selector pack incl. :not(), rem,
+currentColor, pre-wrap/pre-line, word-spacing wiring); actual size was
+within the estimate. Tests live in tests/modern.test.
+
 Small independent items; together they make "normally written" modern
 HTML/CSS stop degrading:
 
