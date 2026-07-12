@@ -2272,9 +2272,62 @@ drawBox(pQuery, pItem, pBox, drawable, x, y, w, h, xview, yview, flags)
         int dep = Tk_Depth(win);
 #endif
         int eR = pV->eBackgroundRepeat;
+        HtmlImage2 *imBg = pV->imZoomedBackgroundImage;
+        HtmlImage2 *imScaled = 0;      /* Owned 'background-size' copy */
 
- 
-        HtmlImageSize(pV->imZoomedBackgroundImage, &iWidth, &iHeight);
+        HtmlImageSize(imBg, &iWidth, &iHeight);
+
+        /* 'background-size'. Resolve the target dimensions against
+         * the background positioning area (bg_w x bg_h) and fetch a
+         * scaled copy from the image cache. The scaled copy is
+         * released at the end of this block; HtmlImageScale() keeps a
+         * per-size cache on the unscaled image, so repeated paints at
+         * the same size are cheap while the copy is alive.
+         */
+        if (
+            pV->eBackgroundSize != CSS_CONST_AUTO &&
+            iWidth > 0 && iHeight > 0 && bg_w > 0 && bg_h > 0
+        ) {
+            int tw = PIXELVAL_AUTO;
+            int th = PIXELVAL_AUTO;
+            if (pV->eBackgroundSize == CSS_CONST_COVER ||
+                pV->eBackgroundSize == CSS_CONST_CONTAIN
+            ) {
+                double rX = (double)bg_w / (double)iWidth;
+                double rY = (double)bg_h / (double)iHeight;
+                double r;
+                if (pV->eBackgroundSize == CSS_CONST_COVER) {
+                    r = (rX > rY) ? rX : rY;
+                } else {
+                    r = (rX < rY) ? rX : rY;
+                }
+                tw = (int)((double)iWidth * r + 0.5);
+                th = (int)((double)iHeight * r + 0.5);
+            } else {
+                if (pV->iBackgroundSizeX != PIXELVAL_AUTO) {
+                    tw = (pV->mask & PROP_MASK_BACKGROUND_SIZE_X)
+                        ? (int)(((double)pV->iBackgroundSizeX * bg_w)
+                            / 10000.0 + 0.5)
+                        : pV->iBackgroundSizeX;
+                }
+                if (pV->iBackgroundSizeY != PIXELVAL_AUTO) {
+                    th = (pV->mask & PROP_MASK_BACKGROUND_SIZE_Y)
+                        ? (int)(((double)pV->iBackgroundSizeY * bg_h)
+                            / 10000.0 + 0.5)
+                        : pV->iBackgroundSizeY;
+                }
+            }
+            if (tw != PIXELVAL_AUTO || th != PIXELVAL_AUTO) {
+                if (tw != PIXELVAL_AUTO && tw < 0) tw = 0;
+                if (th != PIXELVAL_AUTO && th < 0) th = 0;
+                imScaled = HtmlImageScale(pV->imBackgroundImage, &tw,&th,1);
+                if (imScaled) {
+                    imBg = imScaled;
+                    iWidth = tw;
+                    iHeight = th;
+                }
+            }
+        }
 
         if (iWidth > 0 && iHeight > 0) {
             int iPosX;
@@ -2294,8 +2347,8 @@ drawBox(pQuery, pItem, pBox, drawable, x, y, w, h, xview, yview, flags)
              * than it seems.
              */
 #if 0
-            int isAlpha = 
-                HtmlImageAlphaChannel(pTree, pV->imZoomedBackgroundImage);
+            int isAlpha =
+                HtmlImageAlphaChannel(pTree, imBg);
 #endif
             int isAlpha = 1;
 #endif
@@ -2348,9 +2401,9 @@ drawBox(pQuery, pItem, pBox, drawable, x, y, w, h, xview, yview, flags)
 
             if (isAlpha) {
                 tileimage(
-                    pQuery, drawable, w, h, 
-                    pV->imZoomedBackgroundImage,
-                    bg_x, bg_y, bg_w, bg_h, 
+                    pQuery, drawable, w, h,
+                    imBg,
+                    bg_x, bg_y, bg_w, bg_h,
                     iPosX, iPosY
                 );
             } else {
@@ -2394,6 +2447,9 @@ drawBox(pQuery, pItem, pBox, drawable, x, y, w, h, xview, yview, flags)
                 Tk_FreeGC(display, gc);
 #endif
             }
+        }
+        if (imScaled) {
+            HtmlImageFree(imScaled);
         }
     }
 

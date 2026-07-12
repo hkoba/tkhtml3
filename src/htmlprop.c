@@ -198,6 +198,7 @@ static PropertyDef propdef[] = {
   PROPDEF(CUSTOM, FLEX_SHRINK,               iFlexShrink),
   PROPDEF(CUSTOM, ORDER,                     iOrder),
   PROPDEF(CUSTOM, BOX_SHADOW,                iBoxShadowX),
+  PROPDEF(CUSTOM, BACKGROUND_SIZE,           iBackgroundSizeX),
 
   PROPDEF(CUSTOM, FONT_SIZE,                 fFont),
   PROPDEF(CUSTOM, FONT_WEIGHT,               fFont),
@@ -267,6 +268,8 @@ static int propertyValuesSetFlexGrow(HtmlComputedValuesCreator*,CssProperty*);
 static int propertyValuesSetFlexShrink(HtmlComputedValuesCreator*,CssProperty*);
 static int propertyValuesSetOrder(HtmlComputedValuesCreator*,CssProperty*);
 static int propertyValuesSetBoxShadow(HtmlComputedValuesCreator*,CssProperty*);
+static int
+propertyValuesSetBackgroundSize(HtmlComputedValuesCreator*,CssProperty*);
 
 static int 
 propertyValuesSetAutoInteger(HtmlComputedValuesCreator*,CssProperty*,int *);
@@ -284,6 +287,7 @@ static Tcl_Obj *propertyValuesObjFlexGrow(HtmlComputedValues*);
 static Tcl_Obj *propertyValuesObjFlexShrink(HtmlComputedValues*);
 static Tcl_Obj *propertyValuesObjOrder(HtmlComputedValues*);
 static Tcl_Obj *propertyValuesObjBoxShadow(HtmlComputedValues*);
+static Tcl_Obj *propertyValuesObjBackgroundSize(HtmlComputedValues*);
 
 #define CUSTOMDEF(x, y) {x, propertyValuesSet ## y, propertyValuesObj ## y}
 static struct CustomDef {
@@ -302,6 +306,7 @@ static struct CustomDef {
   CUSTOMDEF(CSS_PROPERTY_FLEX_SHRINK,    FlexShrink),
   CUSTOMDEF(CSS_PROPERTY_ORDER,          Order),
   CUSTOMDEF(CSS_PROPERTY_BOX_SHADOW,     BoxShadow),
+  CUSTOMDEF(CSS_PROPERTY_BACKGROUND_SIZE, BackgroundSize),
 };
 
 static int inheritlist[] = {
@@ -331,7 +336,8 @@ static int nolayoutlist[] = {
     CSS_PROPERTY_BORDER_TOP_RIGHT_RADIUS,
     CSS_PROPERTY_BORDER_BOTTOM_RIGHT_RADIUS,
     CSS_PROPERTY_BORDER_BOTTOM_LEFT_RADIUS,
-    CSS_PROPERTY_BOX_SHADOW
+    CSS_PROPERTY_BOX_SHADOW,
+    CSS_PROPERTY_BACKGROUND_SIZE
 };
 
 
@@ -2312,6 +2318,168 @@ propertyValuesObjBoxShadow(p)
 /*
  *---------------------------------------------------------------------------
  *
+ * propertyValuesSetBackgroundSize --
+ *
+ *     Parse a 'background-size' value:
+ *
+ *         auto | cover | contain | [<length>|<pct>|auto]{1,2}
+ *
+ *     Lengths must be absolute (an em value invalidates the
+ *     declaration and the cascade falls back); percentages resolve
+ *     against the background positioning area at paint time. Note
+ *     that the "/ <size>" notation inside the 'background' shorthand
+ *     is NOT parsed - only the standalone property works.
+ *
+ * Results:
+ *     0 if the value is successfully set, 1 on type mismatch.
+ *
+ *---------------------------------------------------------------------------
+ */
+static int
+backgroundSizeComponent(p, pItem, piVal, p_mask)
+    HtmlComputedValuesCreator *p;
+    CssProperty *pItem;
+    int *piVal;
+    HtmlPropMask p_mask;
+{
+    p->values.mask &= ~p_mask;
+    if (pItem->eType == CSS_CONST_AUTO) {
+        *piVal = PIXELVAL_AUTO;
+        return 0;
+    }
+    if (pItem->eType == CSS_TYPE_PERCENT) {
+        int iVal = INTEGER(pItem->v.rVal * 100.0);
+        if (iVal < 0) return 1;
+        *piVal = iVal;
+        p->values.mask |= p_mask;
+        return 0;
+    }
+    if (0 == propertyValuesSetLength(p, piVal, 0, pItem, 0)) {
+        return (*piVal < 0) ? 1 : 0;
+    }
+    return 1;
+}
+
+static int
+propertyValuesSetBackgroundSize(p, pProp)
+    HtmlComputedValuesCreator *p;
+    CssProperty *pProp;
+{
+    const char *zText;
+    const char *z;
+    const char *zEnd;
+    CssProperty *apItem[3];
+    int nItem = 0;
+    int ii;
+    int rc = 1;
+
+    switch (pProp->eType) {
+        case CSS_CONST_AUTO:
+        case CSS_CONST_COVER:
+        case CSS_CONST_CONTAIN:
+            p->values.eBackgroundSize = pProp->eType;
+            p->values.mask &= ~PROP_MASK_BACKGROUND_SIZE_X;
+            p->values.mask &= ~PROP_MASK_BACKGROUND_SIZE_Y;
+            return 0;
+
+        case CSS_CONST_INHERIT: {
+            HtmlComputedValues *pPV = HtmlNodeComputedValues(p->pParent);
+            if (pPV) {
+                p->values.eBackgroundSize = pPV->eBackgroundSize;
+                p->values.iBackgroundSizeX = pPV->iBackgroundSizeX;
+                p->values.iBackgroundSizeY = pPV->iBackgroundSizeY;
+                p->values.mask &= ~PROP_MASK_BACKGROUND_SIZE_X;
+                p->values.mask &= ~PROP_MASK_BACKGROUND_SIZE_Y;
+                p->values.mask |= (pPV->mask & (
+                    PROP_MASK_BACKGROUND_SIZE_X|PROP_MASK_BACKGROUND_SIZE_Y
+                ));
+            }
+            return 0;
+        }
+    }
+
+    /* A single length/percentage arrives as a typed property; a pair
+     * arrives as the raw declaration text. Collect 1-2 items. */
+    if (pProp->eType != CSS_TYPE_RAW && pProp->eType != CSS_TYPE_STRING) {
+        apItem[nItem++] = pProp;
+    } else {
+        zText = HtmlCssPropertyGetString(pProp);
+        if (!zText) return 1;
+        z = zText;
+        zEnd = z + strlen(zText);
+        while (z) {
+            int n;
+            z = HtmlCssGetNextListItem(z, zEnd - z, &n);
+            if (z) {
+                if (nItem >= 3) return 1;
+                apItem[nItem++] = HtmlCssStringToProperty(z, n);
+                z += n;
+            }
+        }
+    }
+
+    if (nItem >= 1 && nItem <= 2) {
+        int iX, iY = PIXELVAL_AUTO;
+        HtmlPropMask savedMask = p->values.mask;
+        if (
+            0 == backgroundSizeComponent(p, apItem[0], &iX,
+                PROP_MASK_BACKGROUND_SIZE_X) &&
+            (nItem < 2 ||
+             0 == backgroundSizeComponent(p, apItem[1], &iY,
+                PROP_MASK_BACKGROUND_SIZE_Y))
+        ) {
+            p->values.eBackgroundSize = 0;    /* explicit dimensions */
+            p->values.iBackgroundSizeX = iX;
+            p->values.iBackgroundSizeY = iY;
+            if (nItem < 2) {
+                p->values.mask &= ~PROP_MASK_BACKGROUND_SIZE_Y;
+            }
+            rc = 0;
+        } else {
+            p->values.mask = savedMask;       /* Roll back mask bits */
+        }
+    }
+
+    /* Free any items allocated from the raw text (apItem[0] may be
+     * the caller's property when it arrived as a single token) */
+    for (ii = 0; ii < nItem; ii++) {
+        if (apItem[ii] != pProp) HtmlFree(apItem[ii]);
+    }
+    return rc;
+}
+
+static Tcl_Obj *
+propertyValuesObjBackgroundSize(p)
+    HtmlComputedValues *p;
+{
+    char zBuf[128];
+    char zX[32], zY[32];
+    switch (p->eBackgroundSize) {
+        case CSS_CONST_COVER:   return Tcl_NewStringObj("cover", -1);
+        case CSS_CONST_CONTAIN: return Tcl_NewStringObj("contain", -1);
+        case CSS_CONST_AUTO:    return Tcl_NewStringObj("auto", -1);
+    }
+    if (p->iBackgroundSizeX == PIXELVAL_AUTO) {
+        sprintf(zX, "auto");
+    } else if (p->mask & PROP_MASK_BACKGROUND_SIZE_X) {
+        sprintf(zX, "%.12g%%", ((double)p->iBackgroundSizeX) / 100.0);
+    } else {
+        sprintf(zX, "%dpx", p->iBackgroundSizeX);
+    }
+    if (p->iBackgroundSizeY == PIXELVAL_AUTO) {
+        sprintf(zY, "auto");
+    } else if (p->mask & PROP_MASK_BACKGROUND_SIZE_Y) {
+        sprintf(zY, "%.12g%%", ((double)p->iBackgroundSizeY) / 100.0);
+    } else {
+        sprintf(zY, "%dpx", p->iBackgroundSizeY);
+    }
+    sprintf(zBuf, "%s %s", zX, zY);
+    return Tcl_NewStringObj(zBuf, -1);
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
  * getPrototypeCreator --
  *   
  *     This function returns a pointer to an HtmlComputedValuesCreator
@@ -2363,6 +2531,7 @@ getPrototypeCreator(pTree, pMask, piCopyBytes)
 	pValues->eVerticalAlign = CSS_CONST_BASELINE;
         pValues->iLineHeight = PIXELVAL_NORMAL;
         pValues->iFlexShrink = 100;   /* 'flex-shrink' initial value 1.0 */
+        pValues->eBackgroundSize = CSS_CONST_AUTO;
         /* iFlexGrow and iOrder default to 0 (struct is zeroed) */
         propertyValuesSetFontSize(p, &Medium);
         p->fontKey.zFontFamily = "Helvetica";

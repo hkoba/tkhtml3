@@ -55,7 +55,8 @@
 #
 #     modern-14.* Options-menu items (roadmap): the 'outline'
 #                 shorthand (previously dead-stored) + :focus;
-#                 box-shadow (single outer shadow, sharp).
+#                 box-shadow (single outer shadow, sharp);
+#                 background-size (cover/contain/lengths/%).
 #
 # Note: when testing with properties, prefer 'color' - the initial value
 # of e.g. 'border-top-width' is "medium" (2px), which is easy to confuse
@@ -1113,5 +1114,38 @@ tcltest::test modern-14.4 {box-shadow rgba color (white-blend approximation)} -b
   .h parse -final {<body><div id="a">a</div></body>}
   property [idnode a] box-shadow
 } -result {4px 4px 0px 0px #808080}
+
+tcltest::test modern-14.5 {background-size computed values} -body {
+  # The paint-level scaling (contain/cover geometry) was verified
+  # pixel-exactly during development; here the parse/readback contract
+  # is locked in.
+  .h reset
+  .h style {
+    #a { background-size: cover }
+    #b { background-size: contain }
+    #c { background-size: 120px 30px }
+    #d { background-size: 25% }
+    #e { background-size: 50% auto }
+  }
+  .h parse -final {<body><div id="a">a</div><div id="b">b</div>
+    <div id="c">c</div><div id="d">d</div><div id="e">e</div></body>}
+  set res {}
+  foreach id {a b c d e} {
+    lappend res [property [idnode $id] background-size]
+  }
+  set res
+} -result {cover contain {120px 30px} {25% auto} {50% auto}}
+
+tcltest::test modern-14.6 {unsupported background-size falls back} -body {
+  .h reset
+  .h style {
+    #a { background-size: 40px; background-size: 2em }
+    #b { background-size: 40px; background-size: -10px }
+  }
+  .h parse -final {<body><div id="a">a</div><div id="b">b</div></body>}
+  # em and negative lengths invalidate; the earlier declaration wins
+  list [property [idnode a] background-size] \
+       [property [idnode b] background-size]
+} -result {{40px auto} {40px auto}}
 
 finish_test

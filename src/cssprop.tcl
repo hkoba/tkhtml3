@@ -154,6 +154,10 @@ P flex-direction flex-wrap justify-content align-items align-self
 P align-content flex-grow flex-shrink flex-basis order row-gap column-gap
 
 P box-shadow
+P background-size
+
+# background-size keywords
+C cover contain
 
 P -tkhtml-replacement-image
 P -tkhtml-ordered-list-start

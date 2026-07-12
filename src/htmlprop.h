@@ -291,6 +291,14 @@ struct HtmlComputedValues {
     int iBackgroundPositionX;
     int iBackgroundPositionY;
 
+    /* 'background-size': CSS_CONST_AUTO (initial), CSS_CONST_COVER,
+     * CSS_CONST_CONTAIN, or 0 for explicit dimensions. The dimensions
+     * are pixels, PIXELVAL_AUTO, or a percentage * 100 when the
+     * PROP_MASK_BACKGROUND_SIZE_X/_Y bit is set. */
+    unsigned char eBackgroundSize;
+    int iBackgroundSizeX;
+    int iBackgroundSizeY;
+
     unsigned char eOverflow;          /* 'overflow' */
     unsigned char eBoxSizing;         /* 'box-sizing' */
 
@@ -431,7 +439,9 @@ struct HtmlComputedValuesCreator {
 #define PROP_MASK_FLEX_BASIS              PROP_MASK_BIT(31)
 #define PROP_MASK_ROW_GAP                 PROP_MASK_BIT(32)
 #define PROP_MASK_COLUMN_GAP              PROP_MASK_BIT(33)
-/* Bits 34-63 are free (the mask became 64-bit in 2026). */
+#define PROP_MASK_BACKGROUND_SIZE_X       PROP_MASK_BIT(34)
+#define PROP_MASK_BACKGROUND_SIZE_Y       PROP_MASK_BIT(35)
+/* Bits 36-63 are free (the mask became 64-bit in 2026). */
 
 /*
  * Pixel values in the HtmlComputedValues struct may also take the following

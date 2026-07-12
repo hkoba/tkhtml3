@@ -1163,6 +1163,15 @@ HtmlImageTile(pImage, pW, pH)
         goto return_tile;
     }
 
+    /* Scaled copies (HtmlImageScale()) are materialized lazily by
+     * HtmlImageImage(); until then pImageName is NULL and the code
+     * below would crash. Validate first. (Previously this could only
+     * be hit with -zoom != 1.0 on a tiled background; 'background-
+     * size' made it reachable at zoom 1.0 too.) */
+    if (!pImage->isValid && !HtmlImageImage(pImage)) {
+        goto return_original;
+    }
+
     /* The image is too big to bother with a tile. Return the original. */
     if (!tilesize(pImage, &iTileWidth, &iTileHeight)) {
         goto return_original;
