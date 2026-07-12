@@ -97,7 +97,7 @@ E text-decoration       none underline overline line-through
 E text-transform        none capitalize uppercase lowercase
 E unicode-bidi          normal embed bidi-override
 E visibility            visible hidden collapse
-E white-space           normal pre nowrap
+E white-space           normal pre nowrap pre-wrap pre-line
 
 C text-top text-bottom 
 C thin medium thick

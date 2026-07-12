@@ -158,6 +158,24 @@ struct InlineBox {
 #define INLINE_NEWLINE   24
 #define INLINE_SPACER    25
 
+/* White-space helpers. Which 'white-space' values preserve runs of
+ * space characters, which turn newline characters into hard line
+ * breaks, and which allow automatic line wrapping:
+ *
+ *                 preserve-space  preserve-newline  allow-wrap
+ *     normal            -                -              x
+ *     nowrap            -                -              -
+ *     pre               x                x              -
+ *     pre-wrap          x                x              x
+ *     pre-line          -                x              x
+ */
+#define WS_PRESERVE_SPACE(e) \
+    ((e) == CSS_CONST_PRE || (e) == CSS_CONST_PRE_WRAP)
+#define WS_PRESERVE_NEWLINE(e) \
+    ((e)==CSS_CONST_PRE || (e)==CSS_CONST_PRE_WRAP || (e)==CSS_CONST_PRE_LINE)
+#define WS_ALLOW_WRAP(e) \
+    ((e) != CSS_CONST_PRE && (e) != CSS_CONST_NOWRAP)
+
 struct InlineContext {
     HtmlTree *pTree;        /* Pointer to owner widget */
     HtmlNode *pNode;        /* Pointer to the node that generated the context */
@@ -503,7 +521,7 @@ int HtmlInlineContextPushBorder(pContext, pBorder)
             InlineBox *pPrev = &pContext->aInline[pContext->nInline-1];
             HtmlComputedValues *pV = HtmlNodeComputedValues(pBorder->pNode);
 
-            int isPre = (pV->eWhitespace == CSS_CONST_PRE);
+            int isPre = WS_PRESERVE_SPACE(pV->eWhitespace);
             if (isPre || pPrev->nSpace == 0) {
                 inlineContextAddSpacer(pContext, pV->eWhitespace);
             }
@@ -584,7 +602,8 @@ HtmlInlineContextPopBorder(p, pBorder)
         eWhitespace = pV->eWhitespace;
     }
     if (p->nInline > 0 && (
-        p->aInline[p->nInline-1].nSpace == 0 || eWhitespace == CSS_CONST_PRE
+        p->aInline[p->nInline-1].nSpace == 0 ||
+        WS_PRESERVE_SPACE(eWhitespace)
     )) {
         inlineContextAddSpacer(p, eWhitespace);
     }
@@ -667,7 +686,7 @@ inlineContextAddSpace(p, nPixels, eWhitespace)
 {
     if (p->nInline > 0) {
         InlineBox *pBox = &p->aInline[p->nInline - 1];
-        if (eWhitespace == CSS_CONST_PRE) {
+        if (WS_PRESERVE_SPACE(eWhitespace)) {
             pBox->nSpace += nPixels;
         } else if (pBox->nSpace == 0) {
             pBox->nSpace = MAX(nPixels, pBox->nSpace);
@@ -1008,9 +1027,9 @@ calculateLineBoxWidth(p, flags, iReqWidth, piWidth, pnBox, pHasText)
         }
 
         if (
-            pBox->eWhitespace == CSS_CONST_NORMAL || 
-            !pNextBox || 
-            pNextBox->eWhitespace == CSS_CONST_NORMAL
+            WS_ALLOW_WRAP(pBox->eWhitespace) ||
+            !pNextBox ||
+            WS_ALLOW_WRAP(pNextBox->eWhitespace)
         ) {
             nBox = ii + 1;
         }
@@ -1427,8 +1446,8 @@ HtmlInlineContextGetLineBox(pLayout, p, flags, pWidth, pCanvas, pVSpace,pAscent)
         }
 
         if (
-            pBox->eType != INLINE_SPACER || 
-            pBox->eWhitespace == CSS_CONST_PRE
+            pBox->eType != INLINE_SPACER ||
+            WS_PRESERVE_SPACE(pBox->eWhitespace)
         ) {
             ignoreSpace = 0;
         }
@@ -1723,7 +1742,7 @@ HtmlInlineContextAddText(pContext, pNode)
             }
 
             case HTML_TEXT_TOKEN_NEWLINE:
-                if (eWhitespace == CSS_CONST_PRE) {
+                if (WS_PRESERVE_NEWLINE(eWhitespace)) {
                     int i;
                     int isLast = HtmlTextIterIsLast(&sIter);
                     for (i = 0; i < nData; i++) {
@@ -1736,7 +1755,7 @@ HtmlInlineContextAddText(pContext, pNode)
             case HTML_TEXT_TOKEN_SPACE: {
                 int i;
                 if (
-                    eWhitespace == CSS_CONST_PRE &&
+                    WS_PRESERVE_SPACE(eWhitespace) &&
                     HtmlInlineContextIsEmpty(pContext)
                 ) {
                     inlineContextAddInlineCanvas(pContext, INLINE_TEXT, 0);

@@ -15,6 +15,11 @@
 #
 #     modern-4.*  The currentColor keyword.
 #
+#     modern-5.*  white-space: pre-wrap and pre-line. Expectations are
+#                 expressed as multiples of a one-line reference height
+#                 (and width inequalities) so they do not depend on the
+#                 fonts installed on the machine.
+#
 # Note: when testing with properties, prefer 'color' - the initial value
 # of e.g. 'border-top-width' is "medium" (2px), which is easy to confuse
 # with a test value.
@@ -303,5 +308,67 @@ tcltest::test modern-2.12 {:not with unsupported argument kills the ruleset only
   list [property [idnode p1] color] [property [idnode p1] font-style] \
        [expr {[llength $::modern_errvar] > 0}]
 } -result {black italic 1}
+
+#--------------------------------------------------------------------------
+# modern-5.*: white-space: pre-wrap / pre-line.
+#
+proc ws_heights {} {
+  # Every div gets the same two-"line" content: a short first line, a
+  # newline, then a second line too long for the 150px box.
+  set txt "aa    bb\ncc dd ee ff gg hh ii jj kk ll mm nn oo pp"
+  .h reset
+  .h style {
+    body { margin: 0 }
+    div  { font-size: 10px; width: 150px }
+    #pr  { white-space: pre }
+    #pw  { white-space: pre-wrap }
+    #pl  { white-space: pre-line }
+  }
+  .h parse -final "<html><body>
+    <div id='ref'>x</div>
+    <div id='pr'>$txt</div>
+    <div id='pw'>$txt</div>
+    <div id='pl'>$txt</div>
+    <div id='nm'>$txt</div>
+  </body></html>"
+  set rb [.h bbox [idnode ref]]
+  set h1 [expr {[lindex $rb 3] - [lindex $rb 1]}]
+  set r {}
+  foreach id {pr pw pl nm} {
+    set bb [.h bbox [idnode $id]]
+    lappend r [expr {([lindex $bb 3] - [lindex $bb 1]) / $h1}]
+  }
+  return $r
+}
+
+tcltest::test modern-5.0 {pre-wrap/pre-line: line counts} -body {
+  # pre: newline honored, no wrapping           -> 2 lines
+  # pre-wrap: newline honored, second line wraps -> 3 lines
+  # pre-line: same line structure as pre-wrap    -> 3 lines
+  # normal: newline collapses, wraps once        -> 2 lines
+  ws_heights
+} -result {2 3 3 2}
+
+tcltest::test modern-5.1 {pre-wrap preserves space runs, pre-line collapses} -body {
+  .h reset
+  .h style {
+    span { display: inline-block; font-size: 10px }
+    #pw { white-space: pre-wrap }
+    #pl { white-space: pre-line }
+    #nm { white-space: normal }
+  }
+  .h parse -final "<html><body>
+    <div><span id='pw'>aa    bb</span></div>
+    <div><span id='pl'>aa    bb</span></div>
+    <div><span id='nm'>aa    bb</span></div>
+  </body></html>"
+  foreach id {pw pl nm} {
+    set bb [.h bbox [idnode $id]]
+    set w($id) [expr {[lindex $bb 2] - [lindex $bb 0]}]
+  }
+  # pre-wrap keeps all four spaces; pre-line collapses them to one,
+  # rendering exactly as wide as white-space normal.
+  list [expr {$w(pw) > $w(pl)}] [expr {$w(pl) == $w(nm)}]
+} -result {1 1}
 
 finish_test

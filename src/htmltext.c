@@ -1305,7 +1305,8 @@ initHtmlText_TextNode(pTree, pTextNode, pInit)
     HtmlTextInit *pInit;
 {
     HtmlNode *pNode = &pTextNode->node;
-    int isPre = (HtmlNodeComputedValues(pNode)->eWhitespace == CSS_CONST_PRE);
+    int eWs = HtmlNodeComputedValues(pNode)->eWhitespace;
+    int isPre = (eWs == CSS_CONST_PRE || eWs == CSS_CONST_PRE_WRAP);
 
     HtmlTextIter sIter;
 
