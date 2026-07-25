@@ -318,6 +318,41 @@ touches the selector chain proper.
   the forgiving parse, not wired to the dynamic-condition machinery -
   extend parseSimpleSelector + isDynamic propagation if ever needed.
 
+## @layer (cssparser.c + css.c)
+
+* **Sort key, not ordinal**: each layer name gets a key packing the
+  per-sibling declaration index into one 6-bit field per nesting
+  level (outermost = most significant, unused levels = 63). Plain
+  integer comparison then reproduces CSS Cascade 5 order: later
+  siblings higher, a layer above its own sub-layers ("un-nested
+  styles come last" at every level), un-layered (key 0, mapped huge)
+  above everything. A flat first-declaration ordinal gets the
+  parent-vs-child case WRONG - that is why the key is hierarchical.
+* ruleCompare() applies the key between the origin/importance step
+  and specificity; for !important rules the comparison is reversed
+  (earlier layer wins, layered beats un-layered). pPriority->
+  important is trustworthy there because equal iPriority implies
+  equal importance (newCssPriority's 1-5 encoding).
+* **Block-state stack**: @media and @layer blocks are parsed inline
+  by the top-level loop; opening one pushes {pMediaQuery, layer} onto
+  CssParse.aBlock and the matching top-level '}' pops it. This is
+  what lets @media nest inside @layer (Tailwind idiom) - the old
+  code just zeroed pMediaQuery on every '}'. EVERY inline-parsed
+  block must push, including matching bare-type @media, or the pops
+  desynchronize.
+* **Leave the brace current**: at-rule handlers must return with
+  their last consumed token still current - the top-level loop
+  advances before reading. Advancing past the '{' swallowed the
+  first selector of minified blocks (fixed for @media in ac758b9).
+* Layer identity is per stylesheet parse (registry in CssParse, freed
+  after cssParse); same-name layers in different [.h style] calls do
+  not merge - cross-sheet comparisons use the per-sheet keys as-is.
+  Sheets are usually decided earlier by iPriority anyway (id-tail
+  ties break AFTER specificity, matching the spec's order-of-
+  appearance step).
+* Not handled: `@import url(...) layer(x)` (the import drops via the
+  existing media-list parse failure), `revert-layer`.
+
 ## Test-design traps discovered while testing all this
 
 (also see testing.md)

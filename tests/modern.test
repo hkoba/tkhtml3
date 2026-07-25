@@ -64,6 +64,12 @@
 #                 (unsupported arguments are dropped without
 #                 invalidating the rule), rule-bucket anchoring.
 #
+#     modern-16.* @layer: cascade layers rank between origin and
+#                 specificity (unlayered > later layer > earlier
+#                 layer for normal declarations, reversed for
+#                 !important), statement and block forms, nesting
+#                 with @media and other layers, anonymous layers.
+#
 # Note: when testing with properties, prefer 'color' - the initial value
 # of e.g. 'border-top-width' is "medium" (2px), which is easy to confuse
 # with a test value.
@@ -1279,5 +1285,95 @@ tcltest::test modern-15.7 {:where() reset pattern is overridable by anything} -b
   .h parse -final {<body><h2 id="a">t</h2></body>}
   list [property [idnode a] margin-top] [property [idnode a] margin-bottom]
 } -result {0px 9px}
+
+#--------------------------------------------------------------------------
+# modern-16.*: @layer cascade layers.
+#
+tcltest::test modern-16.0 {unlayered rules beat layered ones} -body {
+  # Layers rank BEFORE specificity: the un-layered type selector must
+  # beat the layered id selector.
+  .h reset
+  .h style {
+    @layer base { #a { color: #ff0000 } }
+    div { color: #00ff00 }
+  }
+  .h parse -final {<body><div id="a">x</div></body>}
+  property [idnode a] color
+} -result {#00ff00}
+
+tcltest::test modern-16.1 {declaration order ranks layers, not block order} -body {
+  # The Tailwind-style preamble pre-declares the order; utilities is
+  # last so it wins although its block appears before base's.
+  .h reset
+  .h style {
+    @layer theme, base, utilities;
+    @layer utilities { .u { margin-left: 9px } }
+    @layer base { .u { margin-left: 1px } }
+  }
+  .h parse -final {<body><div id="a" class="u">x</div></body>}
+  property [idnode a] margin-left
+} -result {9px}
+
+tcltest::test modern-16.2 {@media nests inside @layer} -body {
+  # The rule after the inner @media block must still be in layer "a"
+  # (the block-close pop restores the layer, not clears it).
+  .h reset
+  .h style {
+    @layer a {
+      @media (min-width: 10px) { .m { color: #112233 } }
+      .n { color: #445566 }
+    }
+    .n { color: #778899 }
+  }
+  .h parse -final {<body><i id="m" class="m">m</i><i id="n" class="n">n</i></body>}
+  list [property [idnode m] color] [property [idnode n] color]
+} -result {{#112233} #778899}
+
+tcltest::test modern-16.3 {minified @layer blocks} -body {
+  .h reset
+  .h style "@layer a{b{color:#cc0000}}@layer b{i{color:#0000cc}}u{color:#00cc00}"
+  .h parse -final {<body><b id="p">x</b><i id="q">y</i><u id="r">z</u></body>}
+  list [property [idnode p] color] [property [idnode q] color] \
+       [property [idnode r] color]
+} -result {{#cc0000} #0000cc #00cc00}
+
+tcltest::test modern-16.4 {anonymous layers are distinct} -body {
+  .h reset
+  .h style {
+    @layer { .y { color: #111111 } }
+    @layer { .y { color: #222222 } }
+  }
+  .h parse -final {<body><div id="a" class="y">x</div></body>}
+  property [idnode a] color
+} -result {#222222}
+
+tcltest::test modern-16.5 {layer order is reversed for !important} -body {
+  # Earlier-layer !important beats later-layer !important, and any
+  # layered !important beats unlayered !important.
+  .h reset
+  .h style {
+    @layer first { .z { color: #101010 !important } }
+    @layer second { .z { color: #202020 !important } }
+    .z { color: #404040 !important }
+  }
+  .h parse -final {<body><div id="a" class="z">x</div></body>}
+  property [idnode a] color
+} -result {#101010}
+
+tcltest::test modern-16.6 {nested layer blocks flatten to dotted names} -body {
+  # o.in1 and o.in2 are distinct sub-layers; the later-declared one
+  # wins. A top-level rule still beats both.
+  .h reset
+  .h style {
+    @layer o {
+      @layer in1 { .v { color: #515151 } }
+      @layer in2 { .v { color: #626262 } }
+      .w { color: #737373 }
+    }
+  }
+  .h parse -final {<body><div id="a" class="v">x</div>
+    <div id="b" class="w v">y</div></body>}
+  list [property [idnode a] color] [property [idnode b] color]
+} -result {{#626262} #737373}
 
 finish_test

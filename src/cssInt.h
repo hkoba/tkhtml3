@@ -220,6 +220,8 @@ struct CssRule {
     CssPriority *pPriority;  /* Pointer to the priority of source stylesheet */
     int specificity;         /* Specificity of the selector */
     int iRule;               /* Rule-number within source style sheet */
+    int iLayer;              /* @layer sort key (see cssLayerRegister() in
+                              * cssparser.c) or 0 for un-layered rules */
     CssMediaQuery *pMediaQuery;  /* Conditional @media, or NULL (not owned) */
     CssSelector *pSelector;  /* The selector-chain for this rule */
     int freePropertySets;          /* True to delete pPropertySet */
@@ -289,6 +291,8 @@ struct CssStyleSheet {
  * is finished it is no longer required, the permanent record of the parsed
  * stylesheet is built up in CssParse.pStyle.
  */
+#define CSS_MAX_LAYERS     32   /* Distinct @layer names per stylesheet */
+#define CSS_MAX_BLOCK_NEST 16   /* @media/@layer nesting depth */
 struct CssParse {
     CssStyleSheet *pStyle;
 
@@ -318,6 +322,30 @@ struct CssParse {
      * against the viewport at style time.
      */
     CssMediaQuery *pMediaQuery;
+
+    /* @layer state. Layer identity is per-parse (i.e. per stylesheet
+     * document): dotted names are registered on first declaration and
+     * assigned a packed hierarchical sort key (cssLayerRegister() in
+     * cssparser.c) that CssRule.iLayer carries into ruleCompare().
+     */
+    int iCurrentLayer;              /* Sort key for new rules (0 = none) */
+    char *zCurrentLayer;            /* Dotted name of current layer or
+                                     * NULL (points into azLayer[]) */
+    int nLayer;                     /* Registered layer names */
+    char *azLayer[CSS_MAX_LAYERS];  /* Registered dotted names */
+    int aLayerKey[CSS_MAX_LAYERS];  /* Sort key for each name */
+    int nAnonLayer;                 /* Anonymous @layer counter */
+
+    /* Restore-stack for at-rule blocks whose contents are parsed
+     * inline by the top-level loop (@media and @layer). Pushed when
+     * such a block opens; the matching top-level '}' pops it.
+     */
+    int nBlock;
+    struct CssParseBlock {
+        CssMediaQuery *pMediaQuery;
+        int iLayer;
+        char *zLayer;
+    } aBlock[CSS_MAX_BLOCK_NEST];
 
     int origin;
     Tcl_Obj *pStyleId;

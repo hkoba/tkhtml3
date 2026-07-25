@@ -3334,6 +3334,9 @@ pTree, n, z, isStyle, origin, pStyleId, pImportCmd, pUrlCmd, pErrorVar, ppStyle)
     }
     propertySetFree(sParse.pPropertySet);
     propertySetFree(sParse.pImportant);
+    for (ii = 0; ii < sParse.nLayer; ii++) {
+        HtmlFree(sParse.azLayer[ii]);
+    }
 
     if (pErrorVar) {
         Tcl_ObjSetVar2(pTree->interp, pErrorVar, 0, sParse.pErrorLog, 0);
@@ -3878,6 +3881,25 @@ ruleCompare(CssRule *pLeft, CssRule *pRight) {
     if( !pLeft->pPriority ) return 0;
 
     res = pLeft->pPriority->iPriority - pRight->pPriority->iPriority;
+
+    if (res == 0 && pLeft->iLayer != pRight->iLayer) {
+        /* Cascade layers (CSS Cascade 5) rank between origin/importance
+         * and specificity. iLayer is the packed hierarchical sort key
+         * built by cssLayerRegister() (cssparser.c): plain integer
+         * comparison yields the layer order for normal declarations
+         * (un-layered = huge = strongest, later siblings higher, a
+         * layer above its own sub-layers). For !important declarations
+         * the order is reversed. Keys are per-stylesheet-parse:
+         * comparisons between layers of *different* sheets sharing one
+         * priority class use them as-is (an accepted approximation of
+         * the spec's document-global layer order).
+         */
+        int iL = pLeft->iLayer ? pLeft->iLayer : 0x7fffffff;
+        int iR = pRight->iLayer ? pRight->iLayer : 0x7fffffff;
+        res = (pLeft->pPriority->important) ? (iR - iL) : (iL - iR);
+        return res;
+    }
+
     if (res == 0) {
         /* But here we want (left - right), because specificity is higher
          * for more specific rules.
@@ -3972,6 +3994,7 @@ cssSelectorPropertySetPair(pParse, pSelector, pPropertySet, freeWhat)
     /* Rules created inside a conditional @media block carry the query
      * (owned by the stylesheet) for style-time evaluation. */
     pRule->pMediaQuery = pParse->pMediaQuery;
+    pRule->iLayer = pParse->iCurrentLayer;
 
     if (freeWhat & FREE_PROPERTYSET) {
         pRule->freePropertySets = 1;

@@ -197,7 +197,7 @@ app UIs, so this tier is demand-driven.
 | `aspect-ratio` | S–M | hooks into getWidth/getHeight auto resolution |
 | `position: sticky` | M | relative + cheap per-scroll offset adjustment |
 | `:is()` / `:where()` | M | **DONE (2026-07-25)** — simple-selector arguments, forgiving list, max/zero specificity (see modern-css-internals.md) |
-| `@layer` | M | cascade-layer sort key in `ruleCompare`; without it, layer-wrapped sheets (Tailwind v4 era) lose *everything* to block-skip |
+| `@layer` | M | **DONE (2026-07-25)** — packed hierarchical sort key in `ruleCompare` (unlayered > later > earlier, reversed for !important); statement/block/anonymous/nested forms; `@import ... layer()` not handled |
 | CSS nesting | M–L | hand-authored convenience; frameworks ship flat CSS |
 | `linear-gradient` → cached photo | M | **borderline** vs. the no-computation rule: a one-shot per-pixel fill (≈ cost of decoding an image). Flag for explicit decision |
 

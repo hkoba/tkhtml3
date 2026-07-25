@@ -1564,6 +1564,202 @@ parseMediaQueryList(pInput, pParse, pIsMatch, ppQuery)
 /*
  *---------------------------------------------------------------------------
  *
+ * cssParsePushBlock --
+ *
+ *     An @media or @layer block whose contents will be parsed inline
+ *     by the top-level loop is being opened: save the current
+ *     media-query/layer state so the matching '}' (HtmlCssRunParser)
+ *     can restore it. Beyond CSS_MAX_BLOCK_NEST the push is dropped -
+ *     the matching pop then restores an outer state too early, which
+ *     is accepted for such absurd nesting.
+ *
+ *---------------------------------------------------------------------------
+ */
+static void
+cssParsePushBlock(pParse)
+    CssParse *pParse;
+{
+    if (pParse->nBlock < CSS_MAX_BLOCK_NEST) {
+        struct CssParseBlock *pB = &pParse->aBlock[pParse->nBlock++];
+        pB->pMediaQuery = pParse->pMediaQuery;
+        pB->iLayer = pParse->iCurrentLayer;
+        pB->zLayer = pParse->zCurrentLayer;
+    }
+}
+
+/*
+ * The number of dots in dotted layer name z, plus one.
+ */
+static int
+cssLayerDepth(z)
+    const char *z;
+{
+    int d = 1;
+    for ( ; *z; z++) if (*z == '.') d++;
+    return d;
+}
+
+/*
+ * Return the registry index of the layer whose full dotted name is
+ * the first nName bytes of zName, or -1 if it is not registered.
+ */
+static int
+cssLayerFind(pParse, zName, nName)
+    CssParse *pParse;
+    const char *zName;
+    int nName;
+{
+    int i;
+    for (i = 0; i < pParse->nLayer; i++) {
+        if ((int)strlen(pParse->azLayer[i]) == nName &&
+            0 == strncmp(pParse->azLayer[i], zName, nName)
+        ) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/* Number of 6-bit levels in a layer sort key, and the key value of
+ * "no layer path at all". See cssLayerRegister() below. */
+#define CSS_LAYER_LEVELS    5
+#define CSS_LAYER_EMPTY_KEY 0x3FFFFFFF
+
+/*
+ *---------------------------------------------------------------------------
+ *
+ * cssLayerRegister --
+ *
+ *     Find or register the layer with the full dotted name zName
+ *     (registering any missing ancestors first, as "@layer a.b" also
+ *     declares "a") and return its registry index.
+ *
+ *     Each layer gets a packed sort key: one 6-bit field per nesting
+ *     level (outermost in the most-significant field) holding the
+ *     1-based declaration index among its siblings, with all deeper
+ *     levels set to 63. Plain integer comparison of keys then yields
+ *     the CSS Cascade 5 layer order directly: a later-declared
+ *     sibling sorts higher, and a layer sorts higher than all of its
+ *     own sub-layers (the spec's "a layer's un-nested styles come
+ *     last"). Un-layered rules (key 0, mapped to a huge value in
+ *     ruleCompare) sort above everything - the same rule applied at
+ *     depth zero.
+ *
+ *     Saturations: beyond CSS_LAYER_LEVELS of nesting a sub-layer
+ *     shares its parent's key; beyond 62 siblings the index clamps;
+ *     when the registry is full new names collapse onto the last
+ *     entry. All are far outside real-world stylesheet shapes.
+ *
+ * Results:
+ *     A registry index (always valid; 0 <= i < pParse->nLayer).
+ *
+ *---------------------------------------------------------------------------
+ */
+static int
+cssLayerRegister(pParse, zName)
+    CssParse *pParse;
+    const char *zName;
+{
+    const char *z = zName;      /* Start of the current path component */
+    int iLevel;
+    int i = 0;
+
+    for (iLevel = 0; ; iLevel++) {
+        const char *zDot = strchr(z, '.');
+        int nPrefix = zDot ? (int)(zDot - zName) : (int)strlen(zName);
+
+        i = cssLayerFind(pParse, zName, nPrefix);
+        if (i < 0) {
+            int iKey;
+            int iParentKey = CSS_LAYER_EMPTY_KEY;
+            int nSib = 0;
+            int j;
+
+            if (pParse->nLayer >= CSS_MAX_LAYERS) {
+                return pParse->nLayer - 1;
+            }
+            if (z != zName) {
+                j = cssLayerFind(pParse, zName, (int)(z - zName) - 1);
+                assert(j >= 0);       /* Ancestors registered above */
+                iParentKey = pParse->aLayerKey[j];
+            }
+            /* Declaration index among the siblings of this component:
+             * registered entries at the same depth under the same
+             * (possibly empty) parent prefix. */
+            for (j = 0; j < pParse->nLayer; j++) {
+                if (cssLayerDepth(pParse->azLayer[j]) == iLevel + 1 &&
+                    0 == strncmp(pParse->azLayer[j], zName, z - zName)
+                ) {
+                    nSib++;
+                }
+            }
+            if (nSib > 61) nSib = 61;
+
+            if (iLevel < CSS_LAYER_LEVELS) {
+                int iShift = 6 * (CSS_LAYER_LEVELS - 1 - iLevel);
+                iKey = (iParentKey & ~(63 << iShift)) | ((nSib+1) << iShift);
+            } else {
+                iKey = iParentKey;
+            }
+
+            i = pParse->nLayer++;
+            pParse->azLayer[i] = (char *)HtmlAlloc("layername", nPrefix + 1);
+            memcpy(pParse->azLayer[i], zName, nPrefix);
+            pParse->azLayer[i][nPrefix] = 0;
+            pParse->aLayerKey[i] = iKey;
+        }
+
+        if (!zDot) return i;
+        z = zDot + 1;
+    }
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
+ * parseLayerName --
+ *
+ *     Parse a (possibly dotted) layer name - IDENT ("." IDENT)* - at
+ *     the current input position into zBuf, prefixed with the current
+ *     layer context ("@layer b" inside "@layer a" names "a.b").
+ *     Over-long names are truncated (they still collide consistently).
+ *
+ * Results:
+ *     Zero on success, non-zero on a parse error.
+ *
+ *---------------------------------------------------------------------------
+ */
+static int
+parseLayerName(pInput, pParse, zBuf, nBuf)
+    CssInput *pInput;
+    CssParse *pParse;
+    char *zBuf;
+    int nBuf;
+{
+    const char *zT;
+    int nT;
+    int iOff = 0;
+
+    if (pParse->zCurrentLayer) {
+        iOff = snprintf(zBuf, nBuf, "%s.", pParse->zCurrentLayer);
+        if (iOff >= nBuf) iOff = nBuf - 1;
+    }
+    while (1) {
+        if (CT_IDENT != inputGetToken(pInput, &zT, &nT)) return 1;
+        iOff += snprintf(&zBuf[iOff], nBuf - iOff, "%.*s", nT, zT);
+        if (iOff >= nBuf) iOff = nBuf - 1;
+        inputNextToken(pInput);
+        if (CT_DOT != inputGetToken(pInput, 0, 0)) break;
+        iOff += snprintf(&zBuf[iOff], nBuf - iOff, ".");
+        if (iOff >= nBuf) iOff = nBuf - 1;
+        inputNextToken(pInput);
+    }
+    return 0;
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
  * parseAtRule --
  *
  * Results:
@@ -1630,6 +1826,7 @@ static int parseAtRule(CssInput *pInput, CssParse *pParse){
              * here used to swallow that token when no white-space
              * followed the brace (minified sheets).
              */
+            cssParsePushBlock(pParse);
             pParse->pMediaQuery = pQuery;
         } else if (!media_ok) {
             /* The media does not match. Skip tokens until the end of
@@ -1645,12 +1842,75 @@ static int parseAtRule(CssInput *pInput, CssParse *pParse){
                 if (inputGetToken(pInput, 0, 0) == CT_RP) iNest--;
                 inputNextToken(pInput);
             }
+        } else {
+            /* A matching bare media type: the block is parsed inline
+             * with no state change. The push keeps the top-level '}'
+             * pop balanced. */
+            cssParsePushBlock(pParse);
         }
-      
+
   /*
     }
     else if (nWord == 4 && strnicmp("page", zWord, nWord) == 0) {
   */
+    }
+    else if (nWord == 5 && strnicmp("layer", zWord, nWord) == 0) {
+        /* @layer (CSS Cascade 5). Supported forms:
+         *
+         *     @layer a, b.c;      -- pre-declare cascade order
+         *     @layer a { rules }  -- block, rules parsed inline
+         *     @layer { rules }    -- anonymous layer
+         *
+         * Layer identity is per stylesheet parse; rules carry the
+         * 1-based first-declaration ordinal in CssRule.iLayer and
+         * ruleCompare() (css.c) turns it into a cascade step.
+         * "@import ... layer(x)" is NOT handled.
+         */
+        char zName[256];
+        int nName = 0;                 /* Names seen in a statement */
+        int iLayerIdx = -1;            /* Registry index of last name */
+        CssTokenType eToken;
+
+        pParse->isBody = 1;
+        inputNextTokenIgnoreSpace(pInput);
+
+        while (CT_IDENT == inputGetToken(pInput, 0, 0)) {
+            if (parseLayerName(pInput, pParse, zName, sizeof(zName))) {
+                return 1;
+            }
+            iLayerIdx = cssLayerRegister(pParse, zName);
+            nName++;
+            if (CT_SPACE == inputGetToken(pInput, 0, 0)) {
+                inputNextToken(pInput);
+            }
+            if (CT_COMMA != inputGetToken(pInput, 0, 0)) break;
+            inputNextTokenIgnoreSpace(pInput);
+        }
+
+        eToken = inputGetToken(pInput, 0, 0);
+        if (eToken == CT_SEMICOLON || eToken == CT_EOF) {
+            /* Statement form: only pre-declares the ordering. At
+             * least one name is required. */
+            if (nName == 0) return 1;
+        } else if (eToken == CT_LP && nName <= 1) {
+            /* Block form ('{' stays current - see @media above). A
+             * nameless block gets a fresh anonymous layer, nested
+             * under the current layer like a named one would be. */
+            if (nName == 0) {
+                if (pParse->zCurrentLayer) {
+                    snprintf(zName, sizeof(zName), "%s.@anon-%d",
+                        pParse->zCurrentLayer, ++pParse->nAnonLayer);
+                } else {
+                    sprintf(zName, "@anon-%d", ++pParse->nAnonLayer);
+                }
+                iLayerIdx = cssLayerRegister(pParse, zName);
+            }
+            cssParsePushBlock(pParse);
+            pParse->iCurrentLayer = pParse->aLayerKey[iLayerIdx];
+            pParse->zCurrentLayer = pParse->azLayer[iLayerIdx];
+        } else {
+            return 1;
+        }
     }
     else if (nWord == 7 && strnicmp("charset", zWord, nWord) == 0) {
         CssTokenType eNext;
@@ -1710,9 +1970,20 @@ void HtmlCssRunParser(zInput, nInput, pParse)
         if (eToken == CT_SGML_OPEN || eToken == CT_SGML_CLOSE) {
             isSyntaxError = 0;
         } else if (eToken == CT_RP) {
-            /* A '}' at the top level closes a conditional @media block
-             * (rules inside such a block are parsed inline). */
-            pParse->pMediaQuery = 0;
+            /* A '}' at the top level closes an @media or @layer block
+             * (rules inside such blocks are parsed inline): restore
+             * the state saved when the block was opened. */
+            if (pParse->nBlock > 0) {
+                struct CssParseBlock *pB = &pParse->aBlock[--pParse->nBlock];
+                pParse->pMediaQuery = pB->pMediaQuery;
+                pParse->iCurrentLayer = pB->iLayer;
+                pParse->zCurrentLayer = pB->zLayer;
+            } else {
+                /* Unbalanced '}' - reset, as before. */
+                pParse->pMediaQuery = 0;
+                pParse->iCurrentLayer = 0;
+                pParse->zCurrentLayer = 0;
+            }
             isSyntaxError = 0;
         } else if (eToken == CT_AT) {
             isSyntaxError = parseAtRule(&sInput, pParse);
