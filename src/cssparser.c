@@ -1619,12 +1619,16 @@ static int parseAtRule(CssInput *pInput, CssParse *pParse){
         inputNextTokenIgnoreSpace(pInput);
         if (parseMediaQueryList(pInput, pParse, &media_ok, &pQuery)) return 1;
         if (CT_LP != inputGetToken(pInput, 0, 0)) return 1;
-        inputNextToken(pInput);
         if (pQuery) {
             /* A conditional media query. The rules inside the block
              * are parsed normally but tagged with the query, to be
              * evaluated against the viewport at style time. The
              * block's closing '}' resets this (HtmlCssRunParser).
+             *
+             * The '{' stays current: the top-level loop advance must
+             * land on the first token inside the block. Advancing
+             * here used to swallow that token when no white-space
+             * followed the brace (minified sheets).
              */
             pParse->pMediaQuery = pQuery;
         } else if (!media_ok) {
@@ -1632,6 +1636,7 @@ static int parseAtRule(CssInput *pInput, CssParse *pParse){
              * the block.
              */
             int iNest = 1;
+            inputNextToken(pInput);
             while (
                 (inputGetToken(pInput, 0, 0) != CT_EOF) &&
                 (inputGetToken(pInput, 0, 0) != CT_RP || iNest != 1)

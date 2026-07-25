@@ -588,6 +588,17 @@ tcltest::test modern-8.2 {unconditional rules unaffected by resize} -body {
   set r
 } -result {purple}
 
+tcltest::test modern-8.3 {minified @media: no space after the brace} -body {
+  # The opening brace of an @media block used to be advanced past
+  # inside parseAtRule, so without white-space after it the top-level
+  # loop advance swallowed the first selector of the block.
+  .h reset
+  .h style "@media screen{b{color:#cc0000}i{color:#0000cc}}u{color:#00cc00}"
+  .h parse -final {<body><b id="a">x</b><i id="b">y</i><u id="c">z</u></body>}
+  list [property [idnode a] color] [property [idnode b] color] \
+       [property [idnode c] color]
+} -result {{#cc0000} #0000cc #00cc00}
+
 #--------------------------------------------------------------------------
 # modern-9.*: viewport units.
 #
