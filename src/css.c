@@ -3095,6 +3095,7 @@ static void selectorFree(pSelector)
 {
     if( !pSelector ) return;
     selectorFree(pSelector->pNext);
+    selectorFree(pSelector->pAlt);
     HtmlFree(pSelector->zValue);
     HtmlFree(pSelector->zAttr);
     HtmlFree(pSelector);
@@ -4037,6 +4038,27 @@ cssSelectorPropertySetPair(pParse, pSelector, pPropertySet, freeWhat)
              case CSS_PSEUDOCLASS_NTHLASTCHILD:
                  spec += 100;
                  break;
+
+             case CSS_SELECTOR_ISLIST: {
+                 /* :is() takes the specificity of its most specific
+                  * argument. (:where() - CSS_SELECTOR_WHERELIST - is
+                  * its zero-specificity twin: no case, contributes
+                  * nothing.) */
+                 CssSelector *pAlt;
+                 int iBest = 0;
+                 for (pAlt = pS->pAlt; pAlt; pAlt = pAlt->pNext) {
+                     int iArg;
+                     switch (pAlt->eSelector) {
+                         case CSS_SELECTOR_ID:        iArg = 10000; break;
+                         case CSS_SELECTOR_TYPE:      iArg = 1;     break;
+                         case CSS_SELECTOR_UNIVERSAL: iArg = 0;     break;
+                         default:                     iArg = 100;   break;
+                     }
+                     if (iArg > iBest) iBest = iArg;
+                 }
+                 spec += iBest;
+                 break;
+             }
          }
     }
     pRule->specificity = spec;
@@ -4080,7 +4102,9 @@ cssSelectorPropertySetPair(pParse, pSelector, pPropertySet, freeWhat)
                 pS->eSelector == CSS_PSEUDOCLASS_FIRSTOFTYPE ||
                 pS->eSelector == CSS_PSEUDOCLASS_LASTOFTYPE ||
                 pS->eSelector == CSS_PSEUDOCLASS_NTHOFTYPE ||
-                pS->eSelector == CSS_PSEUDOCLASS_NTHLASTCHILD
+                pS->eSelector == CSS_PSEUDOCLASS_NTHLASTCHILD ||
+                pS->eSelector == CSS_SELECTOR_ISLIST ||
+                pS->eSelector == CSS_SELECTOR_WHERELIST
             )
         ) {
             pS = pS->pNext;
@@ -4419,9 +4443,10 @@ nthMatch(a, b, idx)
 
 /*
  * Test a single non-combinator simple selector against node x, without
- * following p->pNext. This is the building block for :not(...) - only
- * the selector types that parseNotArgument() (cssparser.c) can produce
- * need to be handled. Anything else reports "no match".
+ * following p->pNext. This is the building block for :not(...), :is()
+ * and :where() - only the selector types that parseSimpleSelector()
+ * (cssparser.c) can produce need to be handled. Anything else reports
+ * "no match".
  */
 static int
 simpleSelectorMatch(p, x)
@@ -4527,6 +4552,21 @@ HtmlCssSelectorTest(pSelector, pNode, dynamic_true)
                     return 0;
                 }
                 break;
+
+            case CSS_SELECTOR_ISLIST:
+            case CSS_SELECTOR_WHERELIST: {
+                /* :is()/:where() - match if any alternative matches.
+                 * pAlt may be NULL (every argument was dropped by the
+                 * forgiving parse) - then the selector matches nothing.
+                 */
+                CssSelector *pAlt = p->pAlt;
+                if (HtmlNodeIsText(x)) return 0;
+                for ( ; pAlt; pAlt = pAlt->pNext) {
+                    if (simpleSelectorMatch(pAlt, x)) break;
+                }
+                if (!pAlt) return 0;
+                break;
+            }
 
             case CSS_SELECTORCHAIN_DESCENDANT: {
                 HtmlNode *pParent = N_PARENT(x);
@@ -5618,6 +5658,27 @@ HtmlCssSelectorToString(pSelector, pObj)
             sscanf(pSelector->zValue, "%d %d", &a, &b);
             sprintf(zBuf, "%s(%dn%+d)", zName, a, b);
             Tcl_AppendStringsToObj(pObj, zBuf, NULL);
+            break;
+        }
+
+        case CSS_SELECTOR_ISLIST:
+        case CSS_SELECTOR_WHERELIST: {
+            /* Alternatives are chained through pNext, but each must be
+             * printed on its own - unhook pNext around the recursive
+             * call so it does not render as a compound selector. */
+            CssSelector *pAlt;
+            Tcl_AppendToObj(pObj,
+                (pSelector->eSelector==CSS_SELECTOR_ISLIST)?":is(":":where(",
+                -1
+            );
+            for (pAlt = pSelector->pAlt; pAlt; pAlt = pAlt->pNext) {
+                CssSelector *pSaveNext = pAlt->pNext;
+                pAlt->pNext = 0;
+                HtmlCssSelectorToString(pAlt, pObj);
+                pAlt->pNext = pSaveNext;
+                if (pAlt->pNext) Tcl_AppendToObj(pObj, ", ", -1);
+            }
+            Tcl_AppendToObj(pObj, ")", -1);
             break;
         }
 

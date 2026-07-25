@@ -58,6 +58,12 @@
 #                 box-shadow (single outer shadow, sharp);
 #                 background-size (cover/contain/lengths/%).
 #
+#     modern-15.* :is() and :where(): OR-matching over a list of
+#                 simple selectors, :is() = max argument specificity,
+#                 :where() = zero specificity, forgiving parsing
+#                 (unsupported arguments are dropped without
+#                 invalidating the rule), rule-bucket anchoring.
+#
 # Note: when testing with properties, prefer 'color' - the initial value
 # of e.g. 'border-top-width' is "medium" (2px), which is easy to confuse
 # with a test value.
@@ -1147,5 +1153,120 @@ tcltest::test modern-14.6 {unsupported background-size falls back} -body {
   list [property [idnode a] background-size] \
        [property [idnode b] background-size]
 } -result {{40px auto} {40px auto}}
+
+#--------------------------------------------------------------------------
+# modern-15.*: :is() and :where().
+#
+tcltest::test modern-15.0 {:is() OR-matches its alternatives} -body {
+  .h reset
+  .h style {
+    :is(h1, h2) { color: #ff0000 }
+  }
+  .h parse -final {<body>
+    <h1 id="a">one</h1><h2 id="b">two</h2><h3 id="c">three</h3>
+  </body>}
+  list [property [idnode a] color] [property [idnode b] color] \
+       [property [idnode c] color]
+} -result {{#ff0000} #ff0000 black}
+
+tcltest::test modern-15.1 {:is() takes the max argument specificity} -body {
+  # :is(#nosuch, .small) has specificity 10000 (the id argument counts
+  # even though only the class alternative matches), so the later
+  # plain .small rule (100) must lose.
+  .h reset
+  .h style {
+    :is(#nosuch, .small) { margin-left: 7px }
+    .small { margin-left: 3px }
+  }
+  .h parse -final {<body><div id="a" class="small">x</div></body>}
+  property [idnode a] margin-left
+} -result {7px}
+
+tcltest::test modern-15.2 {:where() has zero specificity} -body {
+  # :where(#nope, .w) computes specificity 0, so even a bare type
+  # selector (1) declared EARLIER must win.
+  .h reset
+  .h style {
+    p { color: #0000ff }
+    :where(#nope, .w) { color: #00ff00 }
+  }
+  .h parse -final {<body><p id="a" class="w">para</p></body>}
+  property [idnode a] color
+} -result {#0000ff}
+
+tcltest::test modern-15.3 {forgiving list drops only the bad alternatives} -body {
+  # div:hover (compound) and :cranky (unsupported) are dropped; the
+  # .keep alternative must still match. A list whose every argument
+  # is dropped matches nothing but must not invalidate the rule for
+  # its group sibling (.also).
+  .h reset
+  .h style {
+    :is(.miss, div:hover, .keep) { color: #ffff00 }
+    :is(:cranky), .also { color: #123456 }
+  }
+  .h parse -final {<body>
+    <div id="a" class="keep">forgiven</div>
+    <div id="b" class="also">sibling survives</div>
+    <div id="c">plain</div>
+  </body>}
+  list [property [idnode a] color] [property [idnode b] color] \
+       [property [idnode c] color]
+} -result {{#ffff00} #123456 black}
+
+tcltest::test modern-15.4 {compound selectors around :is() anchor correctly} -body {
+  # span:is(.a) is filed in the by-tag bucket under "span" and
+  # .x:is(div) in the by-class bucket under "x": both bucket paths
+  # must still consult the :is() condition.
+  .h reset
+  .h style {
+    span:is(.a) { color: #654321 }
+    .x:is(div, section) { color: #112233 }
+  }
+  .h parse -final {<body>
+    <span id="a" class="a">yes</span><span id="b">no</span>
+    <div id="c" class="x">yes</div><p id="d" class="x">no</p>
+  </body>}
+  list [property [idnode a] color] [property [idnode b] color] \
+       [property [idnode c] color] [property [idnode d] color]
+} -result {{#654321} black #112233 black}
+
+tcltest::test modern-15.5 {:is() combines with combinators} -body {
+  .h reset
+  .h style {
+    #wrap :is(.a, .b) > i { color: #ff00ff }
+  }
+  .h parse -final {<body><div id="wrap">
+    <div class="a"><i id="a">hit</i></div>
+    <div class="c"><i id="b">miss</i></div>
+  </div><div class="b"><i id="c">outside wrap</i></div></body>}
+  list [property [idnode a] color] [property [idnode b] color] \
+       [property [idnode c] color]
+} -result {{#ff00ff} black black}
+
+tcltest::test modern-15.6 {:is() accepts attribute and pseudo arguments} -body {
+  .h reset
+  .h style {
+    li:is(:first-child, [data-hot="1"]) { color: #ee0000 }
+  }
+  .h parse -final {<body><ul>
+    <li id="a">first</li>
+    <li id="b">second</li>
+    <li id="c" data-hot="1">hot</li>
+  </ul></body>}
+  list [property [idnode a] color] [property [idnode b] color] \
+       [property [idnode c] color]
+} -result {{#ee0000} black #ee0000}
+
+tcltest::test modern-15.7 {:where() reset pattern is overridable by anything} -body {
+  # The Tailwind/modern-normalize idiom: a :where() reset must lose
+  # to any later author rule, however weak.
+  .h reset
+  .h style {
+    :where(h1, h2, h3) { margin-top: 0px; margin-bottom: 0px }
+    h2 { margin-bottom: 9px }
+  }
+  .h parse -final {<body><h2 id="a">t</h2></body>}
+  list [property [idnode a] margin-top] [property [idnode a] margin-bottom]
+} -result {0px 9px}
 
 finish_test

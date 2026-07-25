@@ -683,39 +683,33 @@ static int parseAttrSelector(pInput, pParse)
 /*
  *---------------------------------------------------------------------------
  *
- * parseNotArgument --
+ * parseSimpleSelector --
  *
- *     Parse the argument of a :not(...) pseudo-class and add it to the
- *     parse context with the isNot flag set. CSS3 allows exactly one
- *     simple selector; the supported subset is: a type selector, the
- *     universal selector, a class, an id, an attribute selector, and
- *     the :first-child / :last-child pseudo-classes. z/n is the text
- *     between the parentheses.
+ *     Parse a single simple selector at the current input position and
+ *     add it to the parse context (one HtmlCssSelector() call at most).
+ *     This is the shared argument parser for :not(), :is() and
+ *     :where(). The supported subset is: a type selector, the universal
+ *     selector, a class, an id, an attribute selector, and the
+ *     :first-child / :last-child pseudo-classes - i.e. exactly what
+ *     simpleSelectorMatch() (css.c) can test.
  *
  * Results:
- *     Zero on success, non-zero on a parse error.
+ *     Zero on success, non-zero on a parse error. On error no selector
+ *     has been added to the parse context.
  *
  *---------------------------------------------------------------------------
  */
 static int
-parseNotArgument(z, n, pParse)
-    const char *z;
-    int n;
+parseSimpleSelector(pInput, pParse)
+    CssInput *pInput;
     CssParse *pParse;
 {
-    CssInput sInput;
     CssTokenType eToken;
     const char *zT;
     int nT;
 
-    memset(&sInput, 0, sizeof(CssInput));
-    sInput.zInput = (char *)z;
-    sInput.nInput = n;
-    inputNextToken(&sInput);
-    if (CT_SPACE == inputGetToken(&sInput, 0, 0)) inputNextToken(&sInput);
-
-    eToken = inputGetToken(&sInput, &zT, &nT);
-    inputNextToken(&sInput);
+    eToken = inputGetToken(pInput, &zT, &nT);
+    inputNextToken(pInput);
 
     switch (eToken) {
         case CT_STAR:
@@ -732,7 +726,7 @@ parseNotArgument(z, n, pParse)
 
         case CT_DOT: {
             CssToken t;
-            eToken = inputGetToken(&sInput, &t.z, &t.n);
+            eToken = inputGetToken(pInput, &t.z, &t.n);
             if (eToken != CT_IDENT ||
                 (t.z[0] == '-' && t.n > 1 && safe_isdigit(t.z[1])) ||
                 safe_isdigit(t.z[0])
@@ -740,13 +734,13 @@ parseNotArgument(z, n, pParse)
                 return 1;
             }
             HtmlCssSelector(pParse, CSS_SELECTOR_CLASS, 0, &t);
-            inputNextToken(&sInput);
+            inputNextToken(pInput);
             break;
         }
 
         case CT_HASH: {
             CssToken t;
-            eToken = inputGetToken(&sInput, &t.z, &t.n);
+            eToken = inputGetToken(pInput, &t.z, &t.n);
             if (eToken != CT_IDENT ||
                 (t.z[0] == '-' && t.n > 1 && safe_isdigit(t.z[1])) ||
                 safe_isdigit(t.z[0])
@@ -754,17 +748,17 @@ parseNotArgument(z, n, pParse)
                 return 1;
             }
             HtmlCssSelector(pParse, CSS_SELECTOR_ID, 0, &t);
-            inputNextToken(&sInput);
+            inputNextToken(pInput);
             break;
         }
 
         case CT_LSP: {
-            if (parseAttrSelector(&sInput, pParse)) return 1;
+            if (parseAttrSelector(pInput, pParse)) return 1;
             break;
         }
 
         case CT_COLON: {
-            eToken = inputGetToken(&sInput, &zT, &nT);
+            eToken = inputGetToken(pInput, &zT, &nT);
             if (eToken != CT_IDENT) return 1;
             if (nT == 11 && 0 == strnicmp(zT, "first-child", 11)) {
                 HtmlCssSelector(pParse, CSS_PSEUDOCLASS_FIRSTCHILD, 0, 0);
@@ -773,13 +767,46 @@ parseNotArgument(z, n, pParse)
             } else {
                 return 1;
             }
-            inputNextToken(&sInput);
+            inputNextToken(pInput);
             break;
         }
 
         default:
             return 1;
     }
+    return 0;
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
+ * parseNotArgument --
+ *
+ *     Parse the argument of a :not(...) pseudo-class and add it to the
+ *     parse context with the isNot flag set. CSS3 allows exactly one
+ *     simple selector (see parseSimpleSelector() for the supported
+ *     subset). z/n is the text between the parentheses.
+ *
+ * Results:
+ *     Zero on success, non-zero on a parse error.
+ *
+ *---------------------------------------------------------------------------
+ */
+static int
+parseNotArgument(z, n, pParse)
+    const char *z;
+    int n;
+    CssParse *pParse;
+{
+    CssInput sInput;
+
+    memset(&sInput, 0, sizeof(CssInput));
+    sInput.zInput = (char *)z;
+    sInput.nInput = n;
+    inputNextToken(&sInput);
+    if (CT_SPACE == inputGetToken(&sInput, 0, 0)) inputNextToken(&sInput);
+
+    if (parseSimpleSelector(&sInput, pParse)) return 1;
 
     /* Exactly one simple selector is allowed - trailing tokens other
      * than white-space are a syntax error.  */
@@ -789,6 +816,120 @@ parseNotArgument(z, n, pParse)
     if (pParse->isIgnore) return 0;
     if (!pParse->pSelector) return 1;
     pParse->pSelector->isNot = 1;
+    return 0;
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
+ * parseIsArgument --
+ *
+ *     Parse the argument of an :is(...) or :where(...) pseudo-class - a
+ *     comma separated list of simple selectors - and add a single
+ *     CSS_SELECTOR_ISLIST/WHERELIST selector to the parse context with
+ *     the parsed alternatives attached to CssSelector.pAlt.
+ *
+ *     Per CSS Selectors 4 the argument is a *forgiving* selector list:
+ *     an alternative that cannot be parsed (unsupported pseudo-class,
+ *     compound selector, garbage) is dropped without invalidating the
+ *     rule. If every alternative is dropped the selector matches
+ *     nothing (pAlt left NULL) but the rule remains valid.
+ *
+ * Results:
+ *     Zero on success, non-zero on a parse error (only structural
+ *     failures; bad alternatives are forgiven as described above).
+ *
+ *---------------------------------------------------------------------------
+ */
+static int
+parseIsArgument(z, n, pParse, isWhere)
+    const char *z;
+    int n;
+    CssParse *pParse;
+    int isWhere;
+{
+    CssInput sInput;
+    CssSelector *pAltList = 0;      /* Alternatives, in argument order */
+    CssSelector *pAltTail = 0;
+    CssSelector *pSaved;
+    CssTokenType eToken;
+
+    memset(&sInput, 0, sizeof(CssInput));
+    sInput.zInput = (char *)z;
+    sInput.nInput = n;
+    inputNextToken(&sInput);
+
+    /* Alternatives are parsed onto a cleared pParse->pSelector so that
+     * they never link into the selector chain proper. (When isIgnore is
+     * set HtmlCssSelector() is a no-op and nothing is collected.) */
+    pSaved = pParse->pSelector;
+    pParse->pSelector = 0;
+
+    while (1) {
+        int isValid;
+
+        if (CT_SPACE == inputGetToken(&sInput, 0, 0)) inputNextToken(&sInput);
+        eToken = inputGetToken(&sInput, 0, 0);
+        if (eToken == CT_EOF) break;
+        if (eToken == CT_COMMA) {
+            /* Empty alternative - forgiven. Without this guard the
+             * failed parse below would eat the delimiter and the
+             * comma-scan would then swallow the next alternative. */
+            inputNextToken(&sInput);
+            continue;
+        }
+
+        isValid = (0 == parseSimpleSelector(&sInput, pParse));
+        if (isValid) {
+            if (CT_SPACE==inputGetToken(&sInput,0,0)) inputNextToken(&sInput);
+            eToken = inputGetToken(&sInput, 0, 0);
+            /* A compound argument (e.g. "div.foo") is unsupported -
+             * treat it like any other unparseable alternative. */
+            if (eToken != CT_COMMA && eToken != CT_EOF) isValid = 0;
+        }
+
+        if (isValid) {
+            if (!pParse->isIgnore && pParse->pSelector) {
+                CssSelector *pNew = pParse->pSelector;
+                assert(!pNew->pNext);
+                pParse->pSelector = 0;
+                if (pAltTail) {
+                    pAltTail->pNext = pNew;
+                } else {
+                    pAltList = pNew;
+                }
+                pAltTail = pNew;
+            }
+        } else {
+            /* Forgiving list: discard whatever the failed attempt left
+             * behind and skip ahead to the next comma. Commas inside
+             * strings or nested functions are whole tokens here, so a
+             * flat token scan cannot stop early. */
+            while (pParse->pSelector) {
+                CssSelector *pDel = pParse->pSelector;
+                pParse->pSelector = pDel->pNext;
+                HtmlFree(pDel->zValue);
+                HtmlFree(pDel->zAttr);
+                HtmlFree(pDel);
+            }
+            while (1) {
+                eToken = inputGetToken(&sInput, 0, 0);
+                if (eToken == CT_COMMA || eToken == CT_EOF) break;
+                inputNextToken(&sInput);
+            }
+        }
+
+        if (eToken == CT_COMMA) inputNextToken(&sInput);
+    }
+
+    pParse->pSelector = pSaved;
+    if (pParse->isIgnore) return 0;
+
+    HtmlCssSelector(pParse,
+        isWhere ? CSS_SELECTOR_WHERELIST : CSS_SELECTOR_ISLIST, 0, 0
+    );
+    if (!pParse->pSelector) return 1;
+    pParse->pSelector->pAlt = pAltList;
     return 0;
 }
 
@@ -905,7 +1046,7 @@ static int parseSelector(pInput, pParse)
                     /* A functional pseudo-class. The whole "name(arg)"
                      * text arrives as a single CT_FUNCTION token.
                      * Supported: :nth-child(), :nth-of-type(),
-                     * :nth-last-child() and :not().
+                     * :nth-last-child(), :not(), :is() and :where().
                      */
                     int a, b;
                     char zBuf[64];
@@ -928,6 +1069,20 @@ static int parseSelector(pInput, pParse)
                     } else if (nToken >= 5 &&
                         0 == strnicmp(zToken, "not(", 4)) {
                         if (parseNotArgument(&zToken[4], nToken-5, pParse)) {
+                            goto syntax_error;
+                        }
+                        inputNextToken(pInput);
+                        break;
+                    } else if (nToken >= 4 &&
+                        0 == strnicmp(zToken, "is(", 3)) {
+                        if (parseIsArgument(&zToken[3], nToken-4, pParse, 0)) {
+                            goto syntax_error;
+                        }
+                        inputNextToken(pInput);
+                        break;
+                    } else if (nToken >= 7 &&
+                        0 == strnicmp(zToken, "where(", 6)) {
+                        if (parseIsArgument(&zToken[6], nToken-7, pParse, 1)) {
                             goto syntax_error;
                         }
                         inputNextToken(pInput);

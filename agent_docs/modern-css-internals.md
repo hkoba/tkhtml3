@@ -283,6 +283,41 @@ Stage B (multi-line) additions:
   probe branch switches formula on eFlexWrap. This is what makes
   .col-md-* stacking work inside shrink-to-fit ancestors.
 
+## :is() and :where() (css.c + cssparser.c)
+
+Both are one CssSelector link of type CSS_SELECTOR_ISLIST /
+CSS_SELECTOR_WHERELIST whose `pAlt` field holds the alternatives -
+a chain of ordinary CssSelector structs linked by pNext that never
+touches the selector chain proper.
+
+* **Argument subset = the :not() subset**: type, universal, class,
+  id, attribute selectors, :first-child/:last-child. The parser core
+  is shared (parseSimpleSelector in cssparser.c) and the matcher is
+  shared too (simpleSelectorMatch in css.c, OR over pAlt). If you
+  extend one, the other two pseudo-classes get it for free.
+* **Forgiving list (Selectors 4)**: an argument that fails to parse
+  (unsupported pseudo, compound like `div.foo`, garbage) is dropped
+  WITHOUT invalidating the rule - parseIsArgument() frees the partial
+  selector and token-scans to the next comma (safe: commas inside
+  strings/functions arrive as whole tokens). If every argument is
+  dropped, pAlt stays NULL = "matches nothing", and the rule still
+  parses (its group siblings survive). This is unlike :not(), which
+  is strict per CSS3.
+* **Specificity**: ISLIST adds the max over its arguments
+  (id=10000 / class-attr-pseudo=100 / type=1 / universal=0);
+  WHERELIST has no case in the specificity switch = adds zero.
+* **Bucket anchoring**: both are in the anchor-skip list in
+  cssSelectorPropertySetPair, so `.x:is(div)` anchors on `.x`; a bare
+  `:is(...)` falls through to the switch default = universal list
+  (same trap family as :not(), but automatic here because the new
+  eSelector values hit `default:`).
+* selectorFree() recurses into pAlt; HtmlCssSelectorToString prints
+  the list by temporarily unhooking each alternative's pNext (they
+  would otherwise render as one compound selector).
+* Dynamic pseudos (:hover/:focus/:active) inside :is() are DROPPED by
+  the forgiving parse, not wired to the dynamic-condition machinery -
+  extend parseSimpleSelector + isDynamic propagation if ever needed.
+
 ## Test-design traps discovered while testing all this
 
 (also see testing.md)
@@ -300,3 +335,7 @@ Stage B (multi-line) additions:
 * Synthetic wheel events to a Tk 9 Scrollbar without a preceding
   <Enter> die on an uninitialized tk::Priv(xEvents) - always
   `event generate $sb <Enter>` first (real pointers always do).
+* A Tcl list whose FIRST element begins with "#" (e.g. a hex color)
+  gets brace-quoted in its string representation - write the tcltest
+  expectation as {{#ff0000} black ...}, or order the list so a
+  non-color comes first.

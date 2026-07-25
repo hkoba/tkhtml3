@@ -95,6 +95,8 @@ typedef unsigned int u32;
 #define CSS_PSEUDOCLASS_LASTOFTYPE       52
 #define CSS_PSEUDOCLASS_NTHOFTYPE        53   /* :nth-of-type(an+b), zValue = "a b" */
 #define CSS_PSEUDOCLASS_NTHLASTCHILD     54   /* :nth-last-child(an+b), zValue = "a b" */
+#define CSS_SELECTOR_ISLIST              55   /* :is(...), args in pAlt */
+#define CSS_SELECTOR_WHERELIST           56   /* :where(...), args in pAlt */
 
 /*
 ** Pseudo-elements.
@@ -192,6 +194,9 @@ struct CssSelector {
     u8 eSelector;     /* CSS_SELECTOR* or CSS_PSEUDO* value */
     char *zAttr;      /* The attribute queried, if any. */
     char *zValue;     /* The value tested for, if any. */
+    CssSelector *pAlt;   /* ISLIST/WHERELIST: alternatives, OR-matched and
+                          * chained by pNext. NULL means "matches nothing"
+                          * (every argument was dropped at parse time). */
     CssSelector *pNext;  /* Next simple-selector in chain */
 };
 

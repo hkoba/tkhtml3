@@ -189,14 +189,14 @@ app UIs, so this tier is demand-driven.
 
 | Item | Level | Notes |
 |---|---|---|
-| `outline` + `:focus` ring | S | also fixes the known dead-stored `outline:` shorthand dispatch gap |
-| `box-shadow` (no blur) | S | offset filled rect behind the box; zero per-pixel math |
-| `background-size` (incl. cover/contain) | M | reuse `HtmlImageScale()` |
+| `outline` + `:focus` ring | S | **DONE (2026-07-13)** — also fixed the dead-stored `outline:` shorthand dispatch gap |
+| `box-shadow` (no blur) | S | **DONE (2026-07-13)** — single outer shadow, follows border-radius; blur parsed but rendered sharp |
+| `background-size` (incl. cover/contain) | M | **DONE (2026-07-13)** — paint-time resolution via `HtmlImageScale()`; `/ <size>` inside the `background:` shorthand not parsed |
 | `text-overflow: ellipsis` | M | line-breaker + overflow interplay |
 | `letter-spacing` rendering | M | computed value exists; needs per-character draw/measure in the text path |
 | `aspect-ratio` | S–M | hooks into getWidth/getHeight auto resolution |
 | `position: sticky` | M | relative + cheap per-scroll offset adjustment |
-| `:is()` / `:where()` | M | OR-matching + specificity (max / zero); needed for Tailwind-style compiled sheets |
+| `:is()` / `:where()` | M | **DONE (2026-07-25)** — simple-selector arguments, forgiving list, max/zero specificity (see modern-css-internals.md) |
 | `@layer` | M | cascade-layer sort key in `ruleCompare`; without it, layer-wrapped sheets (Tailwind v4 era) lose *everything* to block-skip |
 | CSS nesting | M–L | hand-authored convenience; frameworks ship flat CSS |
 | `linear-gradient` → cached photo | M | **borderline** vs. the no-computation rule: a one-shot per-pixel fill (≈ cost of decoding an image). Flag for explicit decision |
