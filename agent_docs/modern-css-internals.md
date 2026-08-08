@@ -1,9 +1,11 @@
-# How the modern-CSS features (roadmap Tiers 1-3A) are wired
+# How the modern-CSS features (roadmap Tiers 1-4A) are wired
 
 Written 2026-07-12 after landing Tiers 1-2 (commit range
-ed666e3..a83d689); flexbox stage A (Tier 3A) added the same day. This
-is the map for anyone touching var()/@media/viewport-units/calc()/
-flexbox or building on them (calc stage 2, flex-wrap, @layer...).
+ed666e3..a83d689); flexbox stage A (Tier 3A) added the same day,
+:is()/:where() and @layer 2026-07-25, grid stage A (Tier 4A)
+2026-08-08. This is the map for anyone touching
+var()/@media/viewport-units/calc()/flexbox/grid or building on them
+(calc stage 2, flex-wrap, grid stage B...).
 
 ## Custom properties and var() (css.c)
 
@@ -352,6 +354,64 @@ touches the selector chain proper.
   appearance step).
 * Not handled: `@import url(...) layer(x)` (the import drops via the
   existing media-list parse failure), `revert-layer`.
+
+## Grid stage A (htmlgridlayout.c + htmlprop.c)
+
+* **Properties**: `grid-template-columns/rows` are CUSTOM values
+  storing a refcounted `HtmlGridTrackList` (px / pct*100 / fr*100 /
+  auto entries; `repeat(N, ...)` expanded flat at parse time, cap
+  512). Refcounting mirrors HtmlColor: "inherit" shares the parent's
+  pointer + nRef++; the existing-hash-entry branch of
+  HtmlComputedValuesFinish() and HtmlComputedValuesRelease()
+  decrement. A freshly parsed list has a unique pointer, so it can
+  never hit the existing-entry branch (identical templates on two
+  nodes simply don't share a values struct - same trade-off as
+  box-shadow colors). `grid-{row,column}-{start,end}` are CUSTOM
+  ints: 0 = auto, +-n = line, GRID_SPAN_BASE+n = span n (macros in
+  htmlprop.h). The `grid-column`/`grid-row` shorthands split at a
+  top-level '/' and pass the parts through as raw text so "span 2"
+  reaches the placement parser whole.
+* **The 8-bit constant cliff** (hit by adding `grid`/`inline-grid`):
+  eXXX computed values and the generated enumdata[] are unsigned
+  char, and the alphabetically-numbered CSS_CONST_ space had crept
+  to 254 - two more display keywords pushed `wrap-reverse` to 256,
+  which truncates to 0 (the enum-list terminator). cssprop.tcl now
+  numbers byte-context constants (E-line values + `EC`-declared
+  keywords: vertical-align set, cover/contain) FIRST and errors out
+  if those pass 255; int-compared constants (font-size keywords,
+  color names) safely exceed 255 because CssProperty.eType is an
+  int. When a CUSTOM handler stores a keyword into an unsigned char
+  field, declare it with `EC`, not `C`.
+* **Engine skeleton** = flexbox: HtmlLayoutNodeContent() dispatches
+  by display; normalFlowLayoutFlex is shared (it is really
+  "independent formatting context that fills the containing width");
+  the no-element-children fallback contract is identical (text-only
+  containers render via normal flow).
+* **Track sizing (simplified)**: fixed px/pct first; auto tracks =
+  max-content, shrinking proportionally toward min-content on
+  overflow; fr tracks split the leftover with min-content floors
+  (freeze-and-redistribute, like flex 9.7); remaining positive space
+  stretches auto tracks equally - that last rule (css-grid 12.6) is
+  what makes a template-less grid stack children full-width like
+  blocks. Spanning items subtract spanned fixed tracks + in-span
+  gaps, then spread their measure equally over the spanned non-fixed
+  tracks.
+* **Placement**: normalize each axis to (1-based line | auto, span)
+  - negative lines resolve against the explicit grid (-1 = last
+  explicit line). Then css-grid 8.5 sparse row flow: definite
+  row+col first, definite-row/auto-col second, the rest cursor-based
+  over a byte occupancy map. GRID_LAYOUT_MAX_LINE/SPAN/ROWS clamp
+  adversarial placements (clamped items may overlap - degenerate
+  but bounded).
+* **Rows**: %/fr rows without a definite container height act as
+  auto; row spans distribute their excess equally over spanned auto
+  rows; fr rows with definite height take shares floored at their
+  items' heights.
+* Not implemented (stage B or later): minmax(), auto-fill/auto-fit,
+  named lines/areas, grid-auto-rows/columns, grid-auto-flow
+  column/dense, justify-items/self (auto width always stretches),
+  auto-margin space absorption, dense packing. All unsupported
+  *declaration forms* fail the parse so the cascade falls back.
 
 ## Test-design traps discovered while testing all this
 

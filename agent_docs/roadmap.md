@@ -178,10 +178,23 @@ query + viewport-unit restyles share one ConfigureNotify hook.
 Bootstrap 4/5 layouts are flex-based; grid is mainly for hand-written
 app UIs, so this tier is demand-driven.
 
-* **Stage A** [L–XL: 2,000–3,000] — explicit tracks
-  (px/%/fr/auto/`repeat(N, ...)`), line-based placement incl. `span`,
-  `gap`, row-major auto-placement. Same measure-then-place skeleton
-  as flexbox; track sizing replaces flexible-length resolution.
+* **Stage A** — **DONE (2026-08-08)**, two commits mirroring the
+  flexbox split: property plumbing (display grid/inline-grid;
+  track lists as refcounted `HtmlGridTrackList` CUSTOM values with
+  parse-time `repeat(N, ...)` expansion; placement ints with a
+  line/span encoding; `grid-column`/`grid-row` shorthands), then
+  the engine `htmlgridlayout.c` (explicit px/%/fr/auto tracks,
+  simplified track sizing with min-content floors and css-grid 12.6
+  auto-track stretching, line placement incl. negative lines +
+  spans, sparse row-flow auto-placement over an occupancy map,
+  gaps, content-sized auto rows, align-items/self reusing the flex
+  enums). Unsupported forms (`minmax()`, `auto-fill/fit`, named
+  lines, em tracks) invalidate their declaration so the cascade
+  falls back. justify-*, auto-margin absorption, grid-auto-flow
+  column/dense and `grid-auto-rows/columns` are left for stage B.
+  The plumbing commit also forced a constant-numbering fix in
+  cssprop.tcl (byte-context constants first — see
+  modern-css-internals.md).
 * **Stage B** [M–L] — `minmax()`, `auto-fill`/`auto-fit`,
   `grid-template-areas` (a string matrix — mechanical but wordy).
 
