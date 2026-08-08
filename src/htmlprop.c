@@ -199,6 +199,12 @@ static PropertyDef propdef[] = {
   PROPDEF(CUSTOM, ORDER,                     iOrder),
   PROPDEF(CUSTOM, BOX_SHADOW,                iBoxShadowX),
   PROPDEF(CUSTOM, BACKGROUND_SIZE,           iBackgroundSizeX),
+  PROPDEF(CUSTOM, GRID_TEMPLATE_COLUMNS,     pGridColumns),
+  PROPDEF(CUSTOM, GRID_TEMPLATE_ROWS,        pGridRows),
+  PROPDEF(CUSTOM, GRID_COLUMN_START,         iGridColumnStart),
+  PROPDEF(CUSTOM, GRID_COLUMN_END,           iGridColumnEnd),
+  PROPDEF(CUSTOM, GRID_ROW_START,            iGridRowStart),
+  PROPDEF(CUSTOM, GRID_ROW_END,              iGridRowEnd),
 
   PROPDEF(CUSTOM, FONT_SIZE,                 fFont),
   PROPDEF(CUSTOM, FONT_WEIGHT,               fFont),
@@ -271,6 +277,19 @@ static int propertyValuesSetBoxShadow(HtmlComputedValuesCreator*,CssProperty*);
 static int
 propertyValuesSetBackgroundSize(HtmlComputedValuesCreator*,CssProperty*);
 
+static int
+propertyValuesSetGridTemplateColumns(HtmlComputedValuesCreator*,CssProperty*);
+static int
+propertyValuesSetGridTemplateRows(HtmlComputedValuesCreator*,CssProperty*);
+static int
+propertyValuesSetGridColumnStart(HtmlComputedValuesCreator*,CssProperty*);
+static int
+propertyValuesSetGridColumnEnd(HtmlComputedValuesCreator*,CssProperty*);
+static int
+propertyValuesSetGridRowStart(HtmlComputedValuesCreator*,CssProperty*);
+static int
+propertyValuesSetGridRowEnd(HtmlComputedValuesCreator*,CssProperty*);
+
 static int 
 propertyValuesSetAutoInteger(HtmlComputedValuesCreator*,CssProperty*,int *);
 
@@ -288,6 +307,13 @@ static Tcl_Obj *propertyValuesObjFlexShrink(HtmlComputedValues*);
 static Tcl_Obj *propertyValuesObjOrder(HtmlComputedValues*);
 static Tcl_Obj *propertyValuesObjBoxShadow(HtmlComputedValues*);
 static Tcl_Obj *propertyValuesObjBackgroundSize(HtmlComputedValues*);
+
+static Tcl_Obj *propertyValuesObjGridTemplateColumns(HtmlComputedValues*);
+static Tcl_Obj *propertyValuesObjGridTemplateRows(HtmlComputedValues*);
+static Tcl_Obj *propertyValuesObjGridColumnStart(HtmlComputedValues*);
+static Tcl_Obj *propertyValuesObjGridColumnEnd(HtmlComputedValues*);
+static Tcl_Obj *propertyValuesObjGridRowStart(HtmlComputedValues*);
+static Tcl_Obj *propertyValuesObjGridRowEnd(HtmlComputedValues*);
 
 #define CUSTOMDEF(x, y) {x, propertyValuesSet ## y, propertyValuesObj ## y}
 static struct CustomDef {
@@ -307,6 +333,12 @@ static struct CustomDef {
   CUSTOMDEF(CSS_PROPERTY_ORDER,          Order),
   CUSTOMDEF(CSS_PROPERTY_BOX_SHADOW,     BoxShadow),
   CUSTOMDEF(CSS_PROPERTY_BACKGROUND_SIZE, BackgroundSize),
+  CUSTOMDEF(CSS_PROPERTY_GRID_TEMPLATE_COLUMNS, GridTemplateColumns),
+  CUSTOMDEF(CSS_PROPERTY_GRID_TEMPLATE_ROWS,    GridTemplateRows),
+  CUSTOMDEF(CSS_PROPERTY_GRID_COLUMN_START,     GridColumnStart),
+  CUSTOMDEF(CSS_PROPERTY_GRID_COLUMN_END,       GridColumnEnd),
+  CUSTOMDEF(CSS_PROPERTY_GRID_ROW_START,        GridRowStart),
+  CUSTOMDEF(CSS_PROPERTY_GRID_ROW_END,          GridRowEnd),
 };
 
 static int inheritlist[] = {
@@ -2480,6 +2512,477 @@ propertyValuesObjBackgroundSize(p)
 /*
  *---------------------------------------------------------------------------
  *
+ * decrementGridTrackListRef --
+ *
+ *     Decrement the reference count of a grid track list (may be
+ *     NULL), freeing it when the count reaches zero. Track lists are
+ *     shared the same way as HtmlColor: an "inherit" copies the
+ *     parent's pointer and increments nRef; HtmlComputedValuesFinish()
+ *     (the existing-entry case) and HtmlComputedValuesRelease()
+ *     decrement.
+ *
+ *---------------------------------------------------------------------------
+ */
+static void
+decrementGridTrackListRef(pList)
+    HtmlGridTrackList *pList;
+{
+    if (pList) {
+        pList->nRef--;
+        assert(pList->nRef >= 0);
+        if (pList->nRef == 0) {
+            HtmlFree(pList);
+        }
+    }
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
+ * gridParseTrackItem --
+ * gridParseRepeat --
+ *
+ *     Parse one item of a <track-list> into aTrack[*pnTrack] (and
+ *     advance *pnTrack). An item is one of
+ *
+ *         auto | <length> | <percentage> | <number>fr | repeat(N, ...)
+ *
+ *     Lengths must be absolute or viewport units (an em track makes
+ *     the declaration invalid, and the cascade falls back - the usual
+ *     degradation rule). repeat() is expanded on the spot; nesting a
+ *     repeat() inside another is invalid. minmax(), auto-fill and
+ *     auto-fit are stage B (roadmap.md) - they parse as failures, so
+ *     a track list using them falls back wholesale.
+ *
+ * Results:
+ *     0 on success, 1 on a parse failure (the caller abandons the
+ *     whole declaration; nothing has been allocated).
+ *
+ *---------------------------------------------------------------------------
+ */
+static int gridParseRepeat(
+    HtmlComputedValuesCreator *, const char *, int, HtmlGridTrack *, int *);
+
+static int
+gridParseTrackItem(p, pItem, aTrack, pnTrack, mayRepeat)
+    HtmlComputedValuesCreator *p;
+    CssProperty *pItem;
+    HtmlGridTrack *aTrack;       /* Out: array of GRID_MAX_TRACKS */
+    int *pnTrack;                /* IN/OUT: entries of aTrack[] used */
+    int mayRepeat;               /* True to accept repeat(N, ...) */
+{
+    HtmlGridTrack *pTrack;
+    int iVal;
+
+    if (*pnTrack >= GRID_MAX_TRACKS) return 1;
+    pTrack = &aTrack[*pnTrack];
+
+    if (pItem->eType == CSS_CONST_AUTO) {
+        pTrack->eType = GRID_TRACK_AUTO;
+        pTrack->iValue = 0;
+        (*pnTrack)++;
+        return 0;
+    }
+    if (pItem->eType == CSS_TYPE_PERCENT) {
+        iVal = INTEGER(pItem->v.rVal * 100.0);
+        if (iVal < 0) return 1;
+        pTrack->eType = GRID_TRACK_PCT;
+        pTrack->iValue = iVal;
+        (*pnTrack)++;
+        return 0;
+    }
+    if (pItem->eType == CSS_TYPE_RAW || pItem->eType == CSS_TYPE_STRING) {
+        const char *z = pItem->v.zVal;
+        int n = strlen(z);
+        char *zEnd = 0;
+        double rVal = strtod(z, &zEnd);
+
+        /* <number>fr */
+        if (
+            zEnd != z && (zEnd + 2 == z + n) && 0 == strnicmp(zEnd, "fr", 2)
+        ) {
+            if (rVal < 0.0) return 1;
+            pTrack->eType = GRID_TRACK_FR;
+            pTrack->iValue = INTEGER(rVal * 100.0);
+            (*pnTrack)++;
+            return 0;
+        }
+
+        /* repeat(N, <track-list>) */
+        if (
+            mayRepeat && n > 8 && z[n - 1] == ')' &&
+            0 == strnicmp(z, "repeat(", 7)
+        ) {
+            return gridParseRepeat(p, &z[7], n - 8, aTrack, pnTrack);
+        }
+        return 1;
+    }
+
+    /* An absolute or viewport-unit length */
+    if (0 == propertyValuesSetLength(p, &iVal, 0, pItem, 0)) {
+        if (iVal < 0) return 1;
+        pTrack->eType = GRID_TRACK_PX;
+        pTrack->iValue = iVal;
+        (*pnTrack)++;
+        return 0;
+    }
+    return 1;
+}
+
+static int
+gridParseRepeat(p, z, n, aTrack, pnTrack)
+    HtmlComputedValuesCreator *p;
+    const char *z;               /* Text between the parens of repeat() */
+    int n;
+    HtmlGridTrack *aTrack;
+    int *pnTrack;
+{
+    HtmlGridTrack aUnit[GRID_MAX_TRACKS];
+    int nUnit = 0;
+    int nCount;
+    int ii, jj;
+    const char *zEnd = z + n;
+    const char *zComma;
+    const char *zList;
+
+    /* Split "N , <track-list>" at the first comma. The repetition
+     * count must be a positive integer (auto-fill/auto-fit are not
+     * supported - stage B). */
+    for (zComma = z; zComma < zEnd && *zComma != ','; zComma++);
+    if (zComma >= zEnd) return 1;
+    {
+        char *zNumEnd = 0;
+        double rCount = strtod(z, &zNumEnd);
+        if (zNumEnd == z) return 1;
+        while (zNumEnd < zComma && isspace((unsigned char)*zNumEnd)) {
+            zNumEnd++;
+        }
+        if (zNumEnd != zComma) return 1;
+        if (rCount < 1.0 || rCount > (double)GRID_MAX_TRACKS) return 1;
+        nCount = (int)rCount;
+        if ((double)nCount != rCount) return 1;
+    }
+
+    zList = zComma + 1;
+    while (zList) {
+        int nItem;
+        zList = HtmlCssGetNextListItem(zList, zEnd - zList, &nItem);
+        if (zList) {
+            CssProperty *pItem = HtmlCssStringToProperty(zList, nItem);
+            int rc = gridParseTrackItem(p, pItem, aUnit, &nUnit, 0);
+            HtmlFree(pItem);
+            if (rc) return 1;
+            zList += nItem;
+        }
+    }
+    if (nUnit == 0) return 1;
+
+    for (ii = 0; ii < nCount; ii++) {
+        for (jj = 0; jj < nUnit; jj++) {
+            if (*pnTrack >= GRID_MAX_TRACKS) return 1;
+            aTrack[(*pnTrack)++] = aUnit[jj];
+        }
+    }
+    return 0;
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
+ * propertyValuesSetGridTemplate --
+ *
+ *     Parse a 'grid-template-columns' or 'grid-template-rows' value
+ *     (a whitespace separated <track-list>, "none", or "inherit")
+ *     into a freshly allocated HtmlGridTrackList stored at *ppList.
+ *
+ * Results:
+ *     0 if the value is successfully set, 1 on type mismatch.
+ *
+ *---------------------------------------------------------------------------
+ */
+static int
+propertyValuesSetGridTemplate(p, ppList, pProp)
+    HtmlComputedValuesCreator *p;
+    HtmlGridTrackList **ppList;      /* Points into p->values */
+    CssProperty *pProp;
+{
+    HtmlGridTrack aTrack[GRID_MAX_TRACKS];
+    int nTrack = 0;
+    HtmlGridTrackList *pList;
+    int nByte;
+
+    switch (pProp->eType) {
+        case CSS_CONST_NONE:
+            decrementGridTrackListRef(*ppList);
+            *ppList = 0;
+            return 0;
+
+        case CSS_CONST_INHERIT: {
+            HtmlComputedValues *pPV = HtmlNodeComputedValues(p->pParent);
+            if (pPV) {
+                size_t iOff = (char *)ppList - (char *)&p->values;
+                HtmlGridTrackList *pParentList =
+                    *(HtmlGridTrackList **)((char *)pPV + iOff);
+                decrementGridTrackListRef(*ppList);
+                *ppList = pParentList;
+                if (*ppList) (*ppList)->nRef++;
+            }
+            return 0;
+        }
+    }
+
+    if (pProp->eType == CSS_TYPE_RAW || pProp->eType == CSS_TYPE_STRING) {
+        /* A multi-item track list (or a single fr/repeat item) */
+        const char *zText = HtmlCssPropertyGetString(pProp);
+        const char *z;
+        const char *zEnd;
+        if (!zText) return 1;
+        z = zText;
+        zEnd = z + strlen(zText);
+        while (z) {
+            int n;
+            z = HtmlCssGetNextListItem(z, zEnd - z, &n);
+            if (z) {
+                CssProperty *pItem = HtmlCssStringToProperty(z, n);
+                int rc = gridParseTrackItem(p, pItem, aTrack, &nTrack, 1);
+                HtmlFree(pItem);
+                if (rc) return 1;
+                z += n;
+            }
+        }
+    } else {
+        /* A single typed item (e.g. "100px", "50%", "auto") */
+        if (gridParseTrackItem(p, pProp, aTrack, &nTrack, 0)) return 1;
+    }
+    if (nTrack == 0) return 1;
+
+    nByte = sizeof(HtmlGridTrackList) + (nTrack - 1) * sizeof(HtmlGridTrack);
+    pList = (HtmlGridTrackList *)HtmlAlloc("HtmlGridTrackList", nByte);
+    pList->nRef = 1;
+    pList->nTrack = nTrack;
+    memcpy(pList->aTrack, aTrack, nTrack * sizeof(HtmlGridTrack));
+    decrementGridTrackListRef(*ppList);
+    *ppList = pList;
+    return 0;
+}
+
+static int
+propertyValuesSetGridTemplateColumns(p, pProp)
+    HtmlComputedValuesCreator *p;
+    CssProperty *pProp;
+{
+    return propertyValuesSetGridTemplate(p, &p->values.pGridColumns, pProp);
+}
+
+static int
+propertyValuesSetGridTemplateRows(p, pProp)
+    HtmlComputedValuesCreator *p;
+    CssProperty *pProp;
+{
+    return propertyValuesSetGridTemplate(p, &p->values.pGridRows, pProp);
+}
+
+static Tcl_Obj *
+propertyValuesObjGridTemplate(pList)
+    HtmlGridTrackList *pList;
+{
+    Tcl_Obj *pRet;
+    int ii;
+    if (!pList) {
+        return Tcl_NewStringObj("none", -1);
+    }
+    pRet = Tcl_NewStringObj("", 0);
+    for (ii = 0; ii < pList->nTrack; ii++) {
+        HtmlGridTrack *pTrack = &pList->aTrack[ii];
+        char zBuf[64];
+        switch (pTrack->eType) {
+            case GRID_TRACK_PX:
+                sprintf(zBuf, "%dpx", pTrack->iValue);
+                break;
+            case GRID_TRACK_PCT:
+                sprintf(zBuf, "%.12g%%", ((double)pTrack->iValue) / 100.0);
+                break;
+            case GRID_TRACK_FR:
+                sprintf(zBuf, "%.12gfr", ((double)pTrack->iValue) / 100.0);
+                break;
+            default:
+                sprintf(zBuf, "auto");
+                break;
+        }
+        if (ii > 0) Tcl_AppendToObj(pRet, " ", 1);
+        Tcl_AppendToObj(pRet, zBuf, -1);
+    }
+    return pRet;
+}
+
+static Tcl_Obj *
+propertyValuesObjGridTemplateColumns(p)
+    HtmlComputedValues *p;
+{
+    return propertyValuesObjGridTemplate(p->pGridColumns);
+}
+
+static Tcl_Obj *
+propertyValuesObjGridTemplateRows(p)
+    HtmlComputedValues *p;
+{
+    return propertyValuesObjGridTemplate(p->pGridRows);
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
+ * propertyValuesSetGridPlacement --
+ *
+ *     Parse a 'grid-row-start', 'grid-row-end', 'grid-column-start'
+ *     or 'grid-column-end' value:
+ *
+ *         auto | <integer> | span <integer>
+ *
+ *     into the encoding described next to the GRID_LINE_* macros in
+ *     htmlprop.h. Named grid lines ("span" with a <custom-ident>, or
+ *     a bare ident) are not supported: they make the declaration
+ *     invalid, so the cascade falls back.
+ *
+ * Results:
+ *     0 if the value is successfully set, 1 on type mismatch.
+ *
+ *---------------------------------------------------------------------------
+ */
+static int
+propertyValuesSetGridPlacement(p, piVal, pProp)
+    HtmlComputedValuesCreator *p;
+    int *piVal;                  /* Points into p->values */
+    CssProperty *pProp;
+{
+    switch (pProp->eType) {
+        case CSS_CONST_AUTO:
+            *piVal = GRID_LINE_AUTO;
+            return 0;
+
+        case CSS_CONST_INHERIT: {
+            HtmlComputedValues *pPV = HtmlNodeComputedValues(p->pParent);
+            if (pPV) {
+                size_t iOff = (char *)piVal - (char *)&p->values;
+                *piVal = *(int *)((char *)pPV + iOff);
+            }
+            return 0;
+        }
+    }
+
+    if (pProp->eType == CSS_TYPE_FLOAT) {
+        double rVal = pProp->v.rVal;
+        int iLine = (int)rVal;
+        if (
+            (double)iLine != rVal || iLine == 0 ||
+            iLine > GRID_LINE_MAX || iLine < -GRID_LINE_MAX
+        ) {
+            return 1;
+        }
+        *piVal = iLine;
+        return 0;
+    }
+
+    if (pProp->eType == CSS_TYPE_RAW) {
+        /* "span <integer>" (two tokens arrive as raw text). Insist on
+         * whitespace after "span" so a custom-ident like "span2" is
+         * not misread as a span. */
+        const char *z = pProp->v.zVal;
+        if (0 == strnicmp(z, "span", 4) && isspace((unsigned char)z[4])) {
+            char *zEnd = 0;
+            long nSpan = strtol(&z[4], &zEnd, 10);
+            if (zEnd == &z[4]) return 1;
+            while (isspace((unsigned char)*zEnd)) zEnd++;
+            if (*zEnd) return 1;
+            if (nSpan < 1 || nSpan > GRID_LINE_MAX) return 1;
+            *piVal = GRID_SPAN_BASE + (int)nSpan;
+            return 0;
+        }
+        return 1;
+    }
+    return 1;
+}
+
+static int
+propertyValuesSetGridColumnStart(p, pProp)
+    HtmlComputedValuesCreator *p;
+    CssProperty *pProp;
+{
+    return propertyValuesSetGridPlacement(
+        p, &p->values.iGridColumnStart, pProp);
+}
+
+static int
+propertyValuesSetGridColumnEnd(p, pProp)
+    HtmlComputedValuesCreator *p;
+    CssProperty *pProp;
+{
+    return propertyValuesSetGridPlacement(p, &p->values.iGridColumnEnd, pProp);
+}
+
+static int
+propertyValuesSetGridRowStart(p, pProp)
+    HtmlComputedValuesCreator *p;
+    CssProperty *pProp;
+{
+    return propertyValuesSetGridPlacement(p, &p->values.iGridRowStart, pProp);
+}
+
+static int
+propertyValuesSetGridRowEnd(p, pProp)
+    HtmlComputedValuesCreator *p;
+    CssProperty *pProp;
+{
+    return propertyValuesSetGridPlacement(p, &p->values.iGridRowEnd, pProp);
+}
+
+static Tcl_Obj *
+propertyValuesObjGridPlacement(iVal)
+    int iVal;
+{
+    char zBuf[32];
+    if (iVal == GRID_LINE_AUTO) {
+        return Tcl_NewStringObj("auto", -1);
+    }
+    if (GRID_IS_SPAN(iVal)) {
+        sprintf(zBuf, "span %d", GRID_SPAN_OF(iVal));
+    } else {
+        sprintf(zBuf, "%d", iVal);
+    }
+    return Tcl_NewStringObj(zBuf, -1);
+}
+
+static Tcl_Obj *
+propertyValuesObjGridColumnStart(p)
+    HtmlComputedValues *p;
+{
+    return propertyValuesObjGridPlacement(p->iGridColumnStart);
+}
+
+static Tcl_Obj *
+propertyValuesObjGridColumnEnd(p)
+    HtmlComputedValues *p;
+{
+    return propertyValuesObjGridPlacement(p->iGridColumnEnd);
+}
+
+static Tcl_Obj *
+propertyValuesObjGridRowStart(p)
+    HtmlComputedValues *p;
+{
+    return propertyValuesObjGridPlacement(p->iGridRowStart);
+}
+
+static Tcl_Obj *
+propertyValuesObjGridRowEnd(p)
+    HtmlComputedValues *p;
+{
+    return propertyValuesObjGridPlacement(p->iGridRowEnd);
+}
+
+/*
+ *---------------------------------------------------------------------------
+ *
  * getPrototypeCreator --
  *   
  *     This function returns a pointer to an HtmlComputedValuesCreator
@@ -2661,6 +3164,8 @@ HtmlComputedValuesInit(pTree, pNode, pParent, p)
     assert(!p->values.cBorderLeftColor);
     assert(!p->values.cOutlineColor);
     assert(!p->values.cBoxShadowColor);
+    assert(!p->values.pGridColumns);
+    assert(!p->values.pGridRows);
 }
 
 /*
@@ -3105,6 +3610,10 @@ setDisplay97(p)
             /* Blockification per css-display-3: inline-flex -> flex */
             p->values.eDisplay = CSS_CONST_FLEX;
             break;
+        case CSS_CONST_INLINE_GRID:
+            /* Blockification per css-display-3: inline-grid -> grid */
+            p->values.eDisplay = CSS_CONST_GRID;
+            break;
         case CSS_CONST_INLINE:
         case CSS_CONST_INLINE_BLOCK:
         case CSS_CONST_RUN_IN:
@@ -3465,6 +3974,10 @@ HtmlComputedValuesFinish(p)
         pValues->cBorderLeftColor->nRef--;
         pValues->cOutlineColor->nRef--;
         if (pValues->cBoxShadowColor) pValues->cBoxShadowColor->nRef--;
+        if (pValues->pGridColumns) pValues->pGridColumns->nRef--;
+        if (pValues->pGridRows) pValues->pGridRows->nRef--;
+        assert(!pValues->pGridColumns || pValues->pGridColumns->nRef > 0);
+        assert(!pValues->pGridRows || pValues->pGridRows->nRef > 0);
         assert(pValues->fFont->nRef > 0);
         assert(pValues->cColor->nRef > 0);
         assert(pValues->cBackgroundColor->nRef > 0);
@@ -3627,6 +4140,8 @@ HtmlComputedValuesRelease(pTree, pValues)
             if (pValues->cBoxShadowColor) {
                 decrementColorRef(pTree, pValues->cBoxShadowColor);
             }
+            decrementGridTrackListRef(pValues->pGridColumns);
+            decrementGridTrackListRef(pValues->pGridRows);
             HtmlImageFree(pValues->imReplacementImage);
             HtmlImageFree(pValues->imBackgroundImage);
             HtmlImageFree(pValues->imZoomedBackgroundImage);

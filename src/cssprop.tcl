@@ -41,6 +41,21 @@ proc C {args} {foreach a $args {lappend ::constants $a}}
 proc P {args} {foreach a $args {lappend ::properties $a}}
 proc S {args} {foreach a $args {lappend ::shortcut_properties $a}}
 
+# Declare a constant that is stored in an 8-bit computed-value field
+# (an "unsigned char eXXX" member of HtmlComputedValues, or the
+# enumdata[] table in the generated code). Such constants must be
+# assigned values below 256; the generator numbers them first and
+# fails if they overflow. Values of E lines are collected
+# automatically - EC is for keywords consumed by CUSTOM property
+# handlers that store into 8-bit fields (e.g. 'vertical-align',
+# 'background-size').
+proc EC {args} {
+  foreach a $args {
+    C $a
+    lappend ::enumcontext $a
+  }
+}
+
 # Declare an enumerated property. The first argument is the property
 # name. Each subsequent argument is a valid enumerated value for the 
 # property.
@@ -78,6 +93,7 @@ E display               table-caption table-row-group table-cell
 E display               table-header-group table-footer-group table-row 
 E display               table-column-group table-column inline-block
 E display               flex inline-flex
+E display               grid inline-grid
 E display               -tkhtml-inline-button
 E empty-cells           show hide
 E float                 none left right
@@ -111,13 +127,13 @@ E align-self            auto stretch flex-start flex-end center baseline
 E align-content         stretch flex-start flex-end center
 E align-content         space-between space-around space-evenly
 
-C text-top text-bottom 
+EC text-top text-bottom
 C thin medium thick
 C top left right bottom center
 C xx-small x-small small medium large x-large
 C xx-large larger smaller
 C normal bold bolder lighter
-C top middle bottom baseline sub super
+EC top middle bottom baseline sub super
 C normal italic oblique
 
 # Standard web colors
@@ -153,11 +169,14 @@ P border-bottom-right-radius border-bottom-left-radius
 P flex-direction flex-wrap justify-content align-items align-self
 P align-content flex-grow flex-shrink flex-basis order row-gap column-gap
 
+P grid-template-columns grid-template-rows
+P grid-column-start grid-column-end grid-row-start grid-row-end
+
 P box-shadow
 P background-size
 
-# background-size keywords
-C cover contain
+# background-size keywords (stored in the 8-bit eBackgroundSize)
+EC cover contain
 
 P -tkhtml-replacement-image
 P -tkhtml-ordered-list-start
@@ -165,7 +184,7 @@ P -tkhtml-ordered-list-value
 
 S background border border-top border-right border-bottom border-left
 S border-color border-style border-width cue font padding outline margin
-S list-style border-radius flex flex-flow gap
+S list-style border-radius flex flex-flow gap grid-column grid-row
 
 # We treat property 'background-position' as a composite property that sets
 # invented properties background-position-x and background-position-y.
@@ -422,7 +441,27 @@ proc writefile {filename text} {
     close $fd
 }
 
+# Partition the constants: those used in 8-bit computed-value fields
+# (values of E lines, plus EC declarations) are numbered first so
+# they stay below 256. The remaining constants are only ever compared
+# as ints (CssProperty.eType), so they may overflow a byte safely.
+foreach key [array names ::enums] {
+    foreach v $::enums($key) {lappend ::enumcontext $v}
+}
+set bytesafe {}
+set intonly {}
 foreach a [lsort -unique $constants] {
+    if {[lsearch -exact $::enumcontext $a] >= 0} {
+        lappend bytesafe $a
+    } else {
+        lappend intonly $a
+    }
+}
+if {[llength $bytesafe] + 100 - 1 >= 256} {
+    error "cssprop.tcl: [llength $bytesafe] byte-context constants\
+           overflow 8-bit storage (max is 156)"
+}
+foreach a [concat $bytesafe $intonly] {
     set b "CSS_CONST_[string map {- _} [string toupper $a]]"
     lappend ::constant_map [list $a $b]
 }

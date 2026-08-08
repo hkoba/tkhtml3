@@ -24,6 +24,8 @@ typedef struct HtmlComputedValues HtmlComputedValues;
 typedef struct HtmlComputedValuesCreator HtmlComputedValuesCreator;
 typedef struct HtmlColor HtmlColor;
 typedef struct HtmlCounterList HtmlCounterList;
+typedef struct HtmlGridTrack HtmlGridTrack;
+typedef struct HtmlGridTrackList HtmlGridTrackList;
 
 /* The type used for the "value is a percentage" bitmask
  * (HtmlComputedValues.mask) and for the deferred-unit masks
@@ -122,6 +124,49 @@ struct HtmlCounterList {
 };
 
 /*
+ * One track (column or row) of a grid template, and a track list -
+ * the computed value of 'grid-template-columns'/'grid-template-rows'
+ * (CSS Grid Layout stage A - see agent_docs/roadmap.md). repeat(N,
+ * ...) is expanded at parse time, so a track list is always flat.
+ *
+ * Track lists are reference counted the same way as HtmlColor:
+ * an "inherit" copies the parent's pointer and increments nRef.
+ */
+#define GRID_TRACK_PX    1        /* iValue is a pixel count */
+#define GRID_TRACK_PCT   2        /* iValue is a percentage * 100 */
+#define GRID_TRACK_FR    3        /* iValue is a flex factor * 100 */
+#define GRID_TRACK_AUTO  4        /* iValue is unused (zero) */
+
+#define GRID_MAX_TRACKS  512      /* Cap on expanded track-list size */
+
+struct HtmlGridTrack {
+    unsigned char eType;          /* One of the GRID_TRACK_* values */
+    int iValue;
+};
+
+struct HtmlGridTrackList {
+    int nRef;                     /* Number of pointers to this struct */
+    int nTrack;
+    HtmlGridTrack aTrack[1];      /* Actually nTrack entries */
+};
+
+/*
+ * Encoding of the computed 'grid-row-start', 'grid-row-end',
+ * 'grid-column-start' and 'grid-column-end' properties (stored in
+ * the HtmlComputedValues.iGridXXX integers):
+ *
+ *     0                       "auto"
+ *     n in [-10000, 10000]    grid line n (negative counts back from
+ *                             the end of the explicit grid, per spec)
+ *     GRID_SPAN_BASE + n      "span n" (n >= 1)
+ */
+#define GRID_LINE_AUTO   0
+#define GRID_LINE_MAX    10000
+#define GRID_SPAN_BASE   1000000
+#define GRID_IS_SPAN(v)  ((v) >= GRID_SPAN_BASE)
+#define GRID_SPAN_OF(v)  ((v) - GRID_SPAN_BASE)
+
+/*
  * An instance of this structure stores a set of property values as assigned by
  * the styler process. The values are as far as I can tell "computed" values,
  * but in some cases I'm really only guessing.
@@ -146,10 +191,15 @@ struct HtmlCounterList {
  *     cssprop.h, which is generated during compilation by the script in
  *     cssprop.tcl. 
  *
- *     Note: Since we use 'unsigned char' to store the eXXX variables:
- *
- *         assert(CSS_CONST_MIN_CONSTANT >= 0);
- *         assert(CSS_CONST_MAX_CONSTANT < 256);
+ *     Note: Since we use 'unsigned char' to store the eXXX variables,
+ *     every constant that can end up in one must have a value below
+ *     256. CSS_CONST_MAX_CONSTANT may exceed 255: the generator in
+ *     cssprop.tcl numbers the byte-context constants (values of E
+ *     lines plus EC declarations) first and fails if *those* overflow
+ *     a byte. Constants above 255 are only ever compared as ints
+ *     (CssProperty.eType is an int). When adding a CUSTOM property
+ *     handler that stores a keyword in an unsigned char field,
+ *     declare the keyword with EC, not C, in cssprop.tcl.
  *
  * Color type values
  *
@@ -317,6 +367,16 @@ struct HtmlComputedValues {
     int iOrder;                       /* 'order'       (integer) */
     int iRowGap;                      /* 'row-gap'     (pixels) */
     int iColumnGap;                   /* 'column-gap'  (pixels) */
+
+    /* Grid (container: pGridColumns/pGridRows; item: iGridXXX
+     * placement values - see the GRID_* macros above). NULL track
+     * list pointers mean 'none' (the initial value). */
+    HtmlGridTrackList *pGridColumns;  /* 'grid-template-columns' */
+    HtmlGridTrackList *pGridRows;     /* 'grid-template-rows' */
+    int iGridColumnStart;             /* 'grid-column-start' */
+    int iGridColumnEnd;               /* 'grid-column-end' */
+    int iGridRowStart;                /* 'grid-row-start' */
+    int iGridRowEnd;                  /* 'grid-row-end' */
 
     int iZIndex;                      /* 'z-index'        (integer, AUTO) */
 

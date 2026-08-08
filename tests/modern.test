@@ -70,6 +70,18 @@
 #                 !important), statement and block forms, nesting
 #                 with @media and other layers, anonymous layers.
 #
+#     modern-17.* Grid stage A part 1 - property plumbing:
+#                 display grid/inline-grid, grid-template-columns/rows
+#                 track lists (px/%/fr/auto, repeat(N) expansion),
+#                 grid-column/-row shorthands with "/" and span,
+#                 degradation of unsupported forms (minmax, named
+#                 lines) to earlier declarations.
+#
+#     modern-18.* Grid stage A part 2 - the layout engine
+#                 (htmlgridlayout.c): explicit tracks, fr
+#                 distribution, line placement + span, auto
+#                 placement, gap, implicit rows.
+#
 # Note: when testing with properties, prefer 'color' - the initial value
 # of e.g. 'border-top-width' is "medium" (2px), which is easy to confuse
 # with a test value.
@@ -1375,5 +1387,73 @@ tcltest::test modern-16.6 {nested layer blocks flatten to dotted names} -body {
     <div id="b" class="w v">y</div></body>}
   list [property [idnode a] color] [property [idnode b] color]
 } -result {{#626262} #737373}
+
+#--------------------------------------------------------------------------
+# modern-17.*: Grid stage A part 1 - property plumbing.
+#
+tcltest::test modern-17.0 {display grid and inline-grid; track lists} -body {
+  .h reset
+  .h style {
+    #g  { display: grid;
+          grid-template-columns: 100px 1fr repeat(2, auto 2fr); }
+    #g2 { display: inline-grid; grid-template-rows: 50% 30px; }
+  }
+  .h parse -final {<body>
+    <div id="g"><div>A</div></div><div id="g2"></div></body>}
+  list [property [idnode g] display] \
+       [property [idnode g] grid-template-columns] \
+       [property [idnode g] grid-template-rows] \
+       [property [idnode g2] display] \
+       [property [idnode g2] grid-template-rows]
+} -result {grid {100px 1fr auto 2fr auto 2fr} none inline-grid {50% 30px}}
+
+tcltest::test modern-17.1 {grid-column/-row shorthands: /, span, bare int} -body {
+  .h reset
+  .h style {
+    #a { grid-column: 2 / 4; grid-row: span 2; }
+    #b { grid-column: 1 / span 2; grid-row: 3; }
+    #c { grid-column-start: span 3; grid-row-end: -1; }
+  }
+  .h parse -final {<body><div id="a">A</div><div id="b">B</div>
+    <div id="c">C</div></body>}
+  list [property [idnode a] grid-column-start] \
+       [property [idnode a] grid-column-end] \
+       [property [idnode a] grid-row-start] \
+       [property [idnode a] grid-row-end] \
+       [property [idnode b] grid-column-end] \
+       [property [idnode b] grid-row-start] \
+       [property [idnode c] grid-column-start] \
+       [property [idnode c] grid-row-end]
+} -result {2 4 {span 2} auto {span 2} 3 {span 3} -1}
+
+tcltest::test modern-17.2 {unsupported grid forms degrade to earlier rules} -body {
+  # minmax() (stage B) and a custom-ident span invalidate their
+  # declarations; the earlier declarations win. The valid 'color'
+  # in the same block still applies.
+  .h reset
+  .h style {
+    #g { grid-template-columns: 10px 20px; grid-column-start: 2; }
+    #g { grid-template-columns: minmax(0, 1fr);
+         grid-column-start: span2;
+         color: #123456; }
+  }
+  .h parse -final {<body><div id="g">x</div></body>}
+  list [property [idnode g] grid-template-columns] \
+       [property [idnode g] grid-column-start] \
+       [property [idnode g] color]
+} -result {{10px 20px} 2 #123456}
+
+tcltest::test modern-17.3 {grid placement inherit and auto forms} -body {
+  .h reset
+  .h style {
+    #p { grid-column-start: 3; grid-template-columns: 1fr 2fr; }
+    #k { grid-column-start: inherit; grid-column-end: auto;
+         grid-template-columns: inherit; }
+  }
+  .h parse -final {<body><div id="p"><div id="k">x</div></div></body>}
+  list [property [idnode k] grid-column-start] \
+       [property [idnode k] grid-column-end] \
+       [property [idnode k] grid-template-columns]
+} -result {3 auto {1fr 2fr}}
 
 finish_test

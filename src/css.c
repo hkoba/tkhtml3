@@ -3075,6 +3075,67 @@ propertySetAddShortcutGap(p, v)
     propertySetAdd(p, CSS_PROPERTY_COLUMN_GAP, apProp[1]);
 }
 
+/*
+ *---------------------------------------------------------------------------
+ *
+ * propertySetAddShortcutGridLine --
+ *
+ *     Expand the 'grid-column' and 'grid-row' shorthands (CSS Grid
+ *     8.4): "<start> [/ <end>]". An omitted <end> is "auto", unless
+ *     <start> is a plain integer, in which case browsers still store
+ *     "auto" (the placement algorithm turns it into an implicit
+ *     "span 1"). The parts are passed through as raw text, so
+ *     "span 2" reaches the placement parser in htmlprop.c intact.
+ *
+ *---------------------------------------------------------------------------
+ */
+static void
+propertySetAddShortcutGridLine(p, eStart, eEnd, v)
+    CssPropertySet *p;         /* Property set. */
+    int eStart;                /* CSS_PROPERTY_GRID_XXX_START */
+    int eEnd;                  /* CSS_PROPERTY_GRID_XXX_END */
+    CssToken *v;               /* Shorthand value. */
+{
+    const char *z = v->z;
+    const char *zEnd = z + v->n;
+    const char *zSlash;
+    const char *zStart[2];
+    int nPart[2];
+    int nSlash = 0;
+    CssProperty *apProp[2];
+    int i;
+
+    /* Split at the (single) top-level '/' */
+    zStart[0] = z;
+    nPart[0] = v->n;
+    for (zSlash = z; zSlash < zEnd; zSlash++) {
+        if (*zSlash == '/') {
+            if (nSlash) return;              /* two slashes: invalid */
+            nSlash = 1;
+            nPart[0] = zSlash - z;
+            zStart[1] = zSlash + 1;
+            nPart[1] = zEnd - zSlash - 1;
+        }
+    }
+
+    for (i = 0; i < (nSlash ? 2 : 1); i++) {
+        const char *zP = zStart[i];
+        int nP = nPart[i];
+        while (nP > 0 && isspace((unsigned char)*zP)) { zP++; nP--; }
+        while (nP > 0 && isspace((unsigned char)zP[nP-1])) { nP--; }
+        if (nP == 0) return;                 /* empty part: invalid */
+        apProp[i] = textToProperty(0, zP, nP);
+    }
+    if (!nSlash) {
+        apProp[1] = (apProp[0]->eType == CSS_CONST_INHERIT)
+            ? propertyDup(apProp[0])
+            : flexLiteralProperty("auto");
+    }
+
+    propertySetAdd(p, eStart, apProp[0]);
+    propertySetAdd(p, eEnd, apProp[1]);
+}
+
 /*--------------------------------------------------------------------------
  *
  * selectorFree --
@@ -3768,6 +3829,16 @@ HtmlCssDeclaration(pParse, pProp, pExpr, isImportant)
             break;
         case CSS_SHORTCUTPROPERTY_GAP:
             propertySetAddShortcutGap(*ppPropertySet, pExpr);
+            break;
+        case CSS_SHORTCUTPROPERTY_GRID_COLUMN:
+            propertySetAddShortcutGridLine(*ppPropertySet,
+                CSS_PROPERTY_GRID_COLUMN_START, CSS_PROPERTY_GRID_COLUMN_END,
+                pExpr);
+            break;
+        case CSS_SHORTCUTPROPERTY_GRID_ROW:
+            propertySetAddShortcutGridLine(*ppPropertySet,
+                CSS_PROPERTY_GRID_ROW_START, CSS_PROPERTY_GRID_ROW_END,
+                pExpr);
             break;
         case CSS_PROPERTY_CONTENT:
         case CSS_PROPERTY_COUNTER_INCREMENT:

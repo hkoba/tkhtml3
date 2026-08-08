@@ -1115,7 +1115,8 @@ normalFlowLayoutFloat(pLayout, pBox, pNode, pY, pDoNotUse, pNormal)
       DISPLAY(pV) == CSS_CONST_BLOCK ||
       DISPLAY(pV) == CSS_CONST_TABLE ||
       DISPLAY(pV) == CSS_CONST_LIST_ITEM ||
-      DISPLAY(pV) == CSS_CONST_FLEX
+      DISPLAY(pV) == CSS_CONST_FLEX ||
+      DISPLAY(pV) == CSS_CONST_GRID
     );
     assert(eFloat == CSS_CONST_LEFT || eFloat == CSS_CONST_RIGHT);
 
@@ -3421,6 +3422,7 @@ normalFlowLayoutNode(pLayout, pBox, pNode, pY, pContext, pNormal)
     } else if (
         eDisplay == CSS_CONST_INLINE_BLOCK ||
         eDisplay == CSS_CONST_INLINE_FLEX ||
+        eDisplay == CSS_CONST_INLINE_GRID ||
         eDisplay == CSS_CONST__TKHTML_INLINE_BUTTON
     ) {
         pFlow = &FT_INLINE_BLOCK;
@@ -3435,7 +3437,11 @@ normalFlowLayoutNode(pLayout, pBox, pNode, pY, pContext, pNormal)
         pFlow = &FT_FLOAT;
     } else if (nodeIsReplaced(pNode)) {
         pFlow = &FT_BLOCK_REPLACED;
-    } else if (eDisplay == CSS_CONST_BLOCK || eDisplay == CSS_CONST_LIST_ITEM) {
+    } else if (
+        eDisplay == CSS_CONST_BLOCK || eDisplay == CSS_CONST_LIST_ITEM ||
+        eDisplay == CSS_CONST_GRID   /* placeholder: block until the
+                                      * grid layout engine lands */
+    ) {
         pFlow = &FT_BLOCK;
         if (pV->eOverflow != CSS_CONST_VISIBLE) {
             pFlow = &FT_OVERFLOW;
@@ -3742,6 +3748,8 @@ normalFlowLayout(pLayout, pBox, pNode, pNormal)
         DISPLAY(pV) == CSS_CONST_INLINE ||
         DISPLAY(pV) == CSS_CONST_FLEX ||
         DISPLAY(pV) == CSS_CONST_INLINE_FLEX ||
+        DISPLAY(pV) == CSS_CONST_GRID ||
+        DISPLAY(pV) == CSS_CONST_INLINE_GRID ||
         DISPLAY(pV) == CSS_CONST__TKHTML_INLINE_BUTTON
     );
     assert(!nodeIsReplaced(pNode));
