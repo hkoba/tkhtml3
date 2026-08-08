@@ -1456,4 +1456,143 @@ tcltest::test modern-17.3 {grid placement inherit and auto forms} -body {
        [property [idnode k] grid-template-columns]
 } -result {3 auto {1fr 2fr}}
 
+#--------------------------------------------------------------------------
+# modern-18.*: Grid stage A part 2 - the layout engine. All geometry
+# uses fixed pixel sizes, so the assertions are font-independent.
+#
+proc gridbox {id} { .h bbox [idnode $id] }
+
+tcltest::test modern-18.0 {fixed + fr columns fill the container} -body {
+  .h reset
+  .h style {
+    body { margin: 0; padding: 0; }
+    div { margin: 0; }
+    #g { display: grid; grid-template-columns: 100px 1fr 2fr;
+         width: 610px; }
+    .c { height: 20px; }
+  }
+  .h parse -final {<body><div id="g">
+    <div class="c" id="a">a</div><div class="c" id="b">b</div>
+    <div class="c" id="c">c</div></div></body>}
+  # free = 610 - 100 = 510; 1fr = 170, 2fr = 340
+  list [gridbox a] [gridbox b] [gridbox c]
+} -result {{0 0 100 20} {100 0 270 20} {270 0 610 20}}
+
+tcltest::test modern-18.1 {repeat() + gap + auto-placement with a span} -body {
+  .h reset
+  .h style {
+    body { margin: 0; padding: 0; }
+    div { margin: 0; }
+    #g { display: grid; grid-template-columns: repeat(3, 1fr);
+         gap: 10px; width: 320px; }
+    .c { height: 30px; }
+    #s { grid-column: 1 / 3; }
+  }
+  .h parse -final {<body><div id="g">
+    <div class="c" id="d">d</div><div class="c" id="e">e</div>
+    <div class="c" id="f">f</div><div class="c" id="s">s</div>
+    </div></body>}
+  # 3 x 100px columns; s spans columns 1-2 on the second row
+  list [gridbox d] [gridbox e] [gridbox f] [gridbox s]
+} -result {{0 0 100 30} {110 0 210 30} {220 0 320 30} {0 40 210 70}}
+
+tcltest::test modern-18.2 {explicit line placement addresses a cell} -body {
+  .h reset
+  .h style {
+    body { margin: 0; padding: 0; }
+    div { margin: 0; }
+    #g { display: grid; grid-template-columns: 50px 50px;
+         grid-template-rows: 40px 40px; width: 100px; }
+    #p { grid-column: 2; grid-row: 2; }
+  }
+  .h parse -final {<body><div id="g"><div id="p">p</div></div></body>}
+  # The single item sits in the bottom-right cell; the explicit rows
+  # still size the container.
+  list [gridbox p] [gridbox g]
+} -result {{50 40 100 80} {0 0 100 80}}
+
+tcltest::test modern-18.3 {row span stretches over spanned auto rows} -body {
+  .h reset
+  .h style {
+    body { margin: 0; padding: 0; }
+    div { margin: 0; }
+    #g { display: grid; grid-template-columns: repeat(2, 1fr);
+         width: 200px; }
+    #sp { grid-row: span 2; }
+    .r { height: 18px; }
+  }
+  .h parse -final {<body><div id="g">
+    <div id="sp">sp</div><div class="r" id="q1">q1</div>
+    <div class="r" id="q2">q2</div></div></body>}
+  # sp occupies rows 1-2 of column 1 and stretches to their total
+  # height (18 + 18); q1/q2 auto-place into column 2.
+  list [gridbox sp] [gridbox q1] [gridbox q2]
+} -result {{0 0 100 36} {100 0 200 18} {100 18 200 36}}
+
+tcltest::test modern-18.4 {percentage tracks and align-self} -body {
+  .h reset
+  .h style {
+    body { margin: 0; padding: 0; }
+    div { margin: 0; }
+    #g { display: grid; grid-template-columns: 25% 75%;
+         grid-template-rows: 60px; width: 400px; }
+    .c { height: 20px; }
+    #m { align-self: center; }
+    #e { align-self: flex-end; }
+  }
+  .h parse -final {<body><div id="g">
+    <div class="c" id="m">m</div><div class="c" id="e">e</div>
+    </div></body>}
+  # 100px + 300px columns; center = (60-20)/2 = 20, end = 40
+  list [gridbox m] [gridbox e]
+} -result {{0 20 100 40} {100 40 400 60}}
+
+tcltest::test modern-18.5 {inline-grid shrink-to-fit uses track maximums} -body {
+  .h reset
+  .h style {
+    body { margin: 0; padding: 0; }
+    div { margin: 0; }
+    #wrap { width: 500px; }
+    #g { display: inline-grid;
+         grid-template-columns: 40px 60px; gap: 5px; }
+    .c { height: 10px; }
+  }
+  .h parse -final {<body><div id="wrap">
+    <div id="g"><div class="c">a</div><div class="c">b</div></div>
+    </div></body>}
+  # The inline-grid is sized by the min/max probe:
+  # 40 + 5 + 60 = 105 wide
+  set bb [gridbox g]
+  list [expr {[lindex $bb 2] - [lindex $bb 0]}] \
+       [expr {[lindex $bb 3] - [lindex $bb 1]}]
+} -result {105 10}
+
+tcltest::test modern-18.6 {no template: one auto column stacks like blocks} -body {
+  .h reset
+  .h style {
+    body { margin: 0; padding: 0; }
+    div { margin: 0; }
+    #g { display: grid; width: 300px; }
+    .c { height: 25px; }
+  }
+  .h parse -final {<body><div id="g">
+    <div class="c" id="x1">x</div><div class="c" id="x2">y</div>
+    </div></body>}
+  # Each item gets its own implicit row; the single auto column
+  # stretches to the full container width (css-grid 12.6).
+  list [gridbox x1] [gridbox x2]
+} -result {{0 0 300 25} {0 25 300 50}}
+
+tcltest::test modern-18.7 {text-only grid falls back to normal flow} -body {
+  .h reset
+  .h style {
+    body { margin: 0; padding: 0; }
+    #g { display: grid; grid-template-columns: 1fr 1fr; width: 100px; }
+  }
+  .h parse -final {<body><div id="g">plain text</div></body>}
+  # No element children: the container renders its text via the
+  # normal-flow fallback (same contract as flexbox).
+  expr {[lindex [gridbox g] 3] > 0}
+} -result {1}
+
 finish_test

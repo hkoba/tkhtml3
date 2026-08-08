@@ -170,6 +170,15 @@ int HtmlTableLayout(LayoutContext*, BoxContext*, HtmlNode*);
  */
 int HtmlFlexLayout(LayoutContext*, BoxContext*, HtmlNode*);
 
+/*--------------------------------------------------------------------------*
+ * htmlgridlayout.c --
+ *
+ *     Grid layout (roadmap Tier 4 stage A). Same fallback contract
+ *     as HtmlFlexLayout(): returns non-zero if the container has no
+ *     element children.
+ */
+int HtmlGridLayout(LayoutContext*, BoxContext*, HtmlNode*);
+
 int HtmlLayoutNodeContent(LayoutContext *, BoxContext *, HtmlNode *);
 
 void HtmlLayoutDrawBox(HtmlTree*,HtmlCanvas*,int,int,int,int,HtmlNode*,int,int);

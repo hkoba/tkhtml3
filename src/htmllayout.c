@@ -1628,6 +1628,12 @@ HtmlLayoutNodeContent(pLayout, pBox, pNode)
         /* Flex containers are laid out in htmlflexlayout.c. A non-zero
          * return means the container has no element children; fall
          * through to normal-flow layout so bare text still renders. */
+    } else if (
+        (eDisplay == CSS_CONST_GRID || eDisplay == CSS_CONST_INLINE_GRID) &&
+        0 == HtmlGridLayout(pLayout, pBox, pNode)
+    ) {
+        /* Grid containers are laid out in htmlgridlayout.c, with the
+         * same no-element-children fallback contract as flexbox. */
     } else {
         /* Set up a new NormalFlow for this flow */
         HtmlFloatList *pFloat;
@@ -2488,12 +2494,13 @@ normalFlowLayoutTable(pLayout, pBox, pNode, pY, pContext, pNormal)
  *
  * normalFlowLayoutFlex --
  *
- *     Called when a "display:flex" box is encountered in the normal
- *     flow. Like a table, a flex container establishes an independent
- *     formatting context; unlike a table (and like a block), an "auto"
- *     width fills the containing block. The content itself is laid out
- *     by HtmlFlexLayout() (htmlflexlayout.c), reached via
- *     HtmlLayoutNodeContent().
+ *     Called when a "display:flex" or "display:grid" box is
+ *     encountered in the normal flow. Like a table, such a container
+ *     establishes an independent formatting context; unlike a table
+ *     (and like a block), an "auto" width fills the containing
+ *     block. The content itself is laid out by HtmlFlexLayout()
+ *     (htmlflexlayout.c) or HtmlGridLayout() (htmlgridlayout.c),
+ *     reached via HtmlLayoutNodeContent().
  *
  * Results:
  *     Always 0.
@@ -3437,16 +3444,15 @@ normalFlowLayoutNode(pLayout, pBox, pNode, pY, pContext, pNormal)
         pFlow = &FT_FLOAT;
     } else if (nodeIsReplaced(pNode)) {
         pFlow = &FT_BLOCK_REPLACED;
-    } else if (
-        eDisplay == CSS_CONST_BLOCK || eDisplay == CSS_CONST_LIST_ITEM ||
-        eDisplay == CSS_CONST_GRID   /* placeholder: block until the
-                                      * grid layout engine lands */
-    ) {
+    } else if (eDisplay == CSS_CONST_BLOCK || eDisplay == CSS_CONST_LIST_ITEM) {
         pFlow = &FT_BLOCK;
         if (pV->eOverflow != CSS_CONST_VISIBLE) {
             pFlow = &FT_OVERFLOW;
         }
-    } else if (eDisplay == CSS_CONST_FLEX) {
+    } else if (eDisplay == CSS_CONST_FLEX || eDisplay == CSS_CONST_GRID) {
+        /* FT_FLEX is generic "independent formatting context that
+         * fills the containing width": HtmlLayoutNodeContent()
+         * dispatches to the flex or grid engine by 'display'. */
         pFlow = &FT_FLEX;
         if (pV->eOverflow != CSS_CONST_VISIBLE) {
             pFlow = &FT_OVERFLOW;
