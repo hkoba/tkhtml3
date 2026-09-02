@@ -62,6 +62,19 @@ commit each (HTML5 vocabulary, selector pack incl. :not(), rem,
 currentColor, pre-wrap/pre-line, word-spacing wiring); actual size was
 within the estimate. Tests live in tests/modern.test.
 
+**Addendum — `<details>`/`<summary>` open/close (DONE 2026-09-02)** [S]:
+the vocabulary pass only made them render as blocks. Now the standard
+`open` attribute drives UA rules in html.css (hide non-summary element
+children when closed, `::before` disclosure marker, cursor:pointer),
+mirroring the existing `dialog[open]` pattern, so author CSS keyed on
+`details[open]` re-matches on toggle. The missing DOM primitive
+`$node attribute -remove NAME` was added (presence selectors match an
+empty value, so closing requires removal); `::tkhtml::details_toggle`
+in tkhtml.tcl wires a host's Button-1 handler to it. Click *events*
+stay host-side, like :hover. Known limitation: bare text children of a
+closed details (not wrapped in any element) stay visible. Tests:
+modern-19.*.
+
 Small independent items; together they make "normally written" modern
 HTML/CSS stop degrading:
 

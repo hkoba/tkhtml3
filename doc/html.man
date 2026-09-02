@@ -602,7 +602,7 @@
 	manipulate the document node via the following subcommands:
 
 [Subcommand {
-	nodeHandle attribute ??-default _default-value_? ?attribute? ?new-value??
+	nodeHandle attribute ??-default _default-value_|-remove? ?attribute? ?new-value??
 		If the _attribute_ argument is present, then return the value
 		of the named html attribute. If the attribute is not defined
 		for the node, then a copy of the _default-value_ argument is
@@ -611,7 +611,17 @@
 		attribute does not exist, an error is raised.
 
 		If the _new-value_ argument is present, then set the named
-                attribute to the specified _new-value_.
+                attribute to the specified _new-value_. Setting an attribute
+                schedules a restyle of the node, so stylesheet rules with
+                attribute selectors (e.g. [SQ details\[open\]]) are
+                re-evaluated.
+
+		The form [SQ nodeHandle attribute -remove _attribute_]
+		removes the named attribute entirely and schedules a restyle.
+		This is different from setting it to an empty string: a
+		presence selector such as [SQ \[open\]] matches an empty
+		value but not a removed attribute. Removing an attribute that
+		is not present is a no-op. An empty string is returned.
 
 		If no _attribute_ argument is present, return a key-value list
 		of the defined attributes of the form that can be passed to 

@@ -413,6 +413,47 @@ touches the selector chain proper.
   auto-margin space absorption, dense packing. All unsupported
   *declaration forms* fail the parse so the cascade falls back.
 
+## details/summary (html.css + htmltree.c + tkhtml.tcl)
+
+* **State = the standard `open` attribute**, like the pre-existing
+  `dialog[open]` rule. UA rules in html.css:
+  `details:not([open]) > *:not(summary) { display:none }` plus a
+  `::before` disclosure marker (`"\25B6\A0"` / `"\25BC\A0"` - dequote
+  eats ONE whitespace char after a hex escape, so NBSP via `\A0` is
+  the safe separator) and `cursor: pointer`. This is the only design
+  under which real-world author CSS written against `details[open]`
+  re-matches on toggle.
+* **Why a new primitive was needed**: `$node attribute NAME VALUE`
+  already existed and already calls HtmlCallbackRestyle, but there
+  was no removal - and `[open]` is a presence test that matches an
+  empty value (`<details open>` stores zValue="", non-NULL), so
+  "close" cannot be expressed by setting. `$node attribute -remove
+  NAME` (removeNodeAttribute in htmltree.c) rebuilds pAttributes
+  without the entry (case-insensitive match; NULL result for the last
+  attribute is valid), frees pStyle when "style" is removed, and
+  restyles.
+* **Click wiring stays host-side**, like :hover - the C layer only
+  re-targets X events (docwinEventHandler) and never interprets
+  them. `::tkhtml::details_toggle $node` (tkhtml.tcl, embedded via
+  mkdefaultstyle) is the shared helper: it walks up from the clicked
+  node, requires passing through a `summary` before reaching the
+  `details` (so clicks on open content are ignored, return 0), and
+  toggles via set/remove. Presence is tested with
+  `[catch {$n attribute open}]` - no sentinel default needed.
+* **Rejected design**: a dynamic-flag pseudo-class (`:open` via the
+  reserved-but-unused HTML_DYNAMIC_USERFLAG). Real CSS targets
+  `details[open]`, and the initial `<details open>` state would need
+  a parser hook; the attribute design strictly dominates.
+* **Known limitation**: bare text children of a closed details (not
+  wrapped in any element) stay visible - `*:not(summary)` can only
+  hide elements, and text nodes are laid out via the parent's inline
+  context. Hiding them would need a details-specific skip in the
+  layout child walk; deliberately not done.
+* Drive-by fix: `$node property -before PROP` used objv[2] (the
+  literal string "-before") as the property name; now uses the
+  shifted aArg[0]. `-before`/`-after` return "" when no generated
+  content exists - modern-19.6 relies on both facts.
+
 ## Test-design traps discovered while testing all this
 
 (also see testing.md)

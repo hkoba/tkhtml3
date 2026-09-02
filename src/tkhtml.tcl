@@ -155,6 +155,35 @@ namespace eval tkhtml {
       return $sb
     }
 
+    # Toggle the "open" attribute of the <details> element that the given
+    # node's <summary> belongs to. The node may be the <summary> element
+    # itself, or any descendant of it (e.g. the text node returned by
+    # [$html node $x $y] for a click on the summary line). A host should
+    # call this from its Button-1 handler; clicks that are not on a
+    # summary (including clicks on the open content of a <details>) are
+    # ignored. Returns 1 if the attribute was toggled, 0 otherwise.
+    proc details_toggle {node} {
+        if {[$node tag] eq ""} { set node [$node parent] }
+        set in_summary 0
+        for {set n $node} {$n ne ""} {set n [$n parent]} {
+            switch -- [$n tag] {
+                summary {
+                    set in_summary 1
+                }
+                details {
+                    if {!$in_summary} { return 0 }
+                    if {[catch {$n attribute open}]} {
+                        $n attribute open ""
+                    } else {
+                        $n attribute -remove open
+                    }
+                    return 1
+                }
+            }
+        }
+        return 0
+    }
+
     proc ol_liststyletype {} {
       switch -exact -- [uplevel {$N attr type}] {
         i {return lower-roman}

@@ -21,6 +21,18 @@ MARK            { background-color: yellow; color: black }
 TEMPLATE, DATALIST, AUDIO { display: none }
 DIALOG          { display: none }
 DIALOG[open]    { display: block; border: 2px solid; padding: 1em }
+
+/* <details>/<summary>. Open/closed state is the standard "open" attribute,
+ * toggled at runtime with [$node attribute open ""] / [$node attribute
+ * -remove open] (see ::tkhtml::details_toggle in tkhtml.tcl). Click wiring
+ * is the host's job, like :hover. Known limitation: bare text children of
+ * a closed <details> (not wrapped in any element) stay visible - only
+ * element children can be hidden by CSS.
+ */
+DETAILS:not([open]) > *:not(SUMMARY) { display: none }
+DETAILS > SUMMARY              { cursor: pointer }
+DETAILS > SUMMARY:before       { content: "\25B6\A0" }
+DETAILS[open] > SUMMARY:before { content: "\25BC\A0" }
 Q:before        { content: "\201C" }
 Q:after         { content: "\201D" }
 

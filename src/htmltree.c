@@ -864,6 +864,75 @@ setNodeAttribute(pNode, zAttrName, zAttrVal)
     }
 }
 
+/*
+ *---------------------------------------------------------------------------
+ *
+ * removeNodeAttribute --
+ *
+ *     Remove an attribute from a node, if it is present. The attribute
+ *     name is matched case-insensitively (HTML attribute names are
+ *     case-insensitive - the parser stores them folded to lower-case).
+ *
+ *     Removal is distinct from setting an attribute to an empty string:
+ *     presence selectors like [open] match an empty value but not a
+ *     removed attribute.
+ *
+ * Results:
+ *     Non-zero if an attribute was removed, zero if no match was found.
+ *
+ * Side effects:
+ *     May replace HtmlElementNode.pAttributes.
+ *
+ *---------------------------------------------------------------------------
+ */
+static int
+removeNodeAttribute(pNode, zAttrName)
+    HtmlNode *pNode;
+    const char *zAttrName;
+{
+    char const *azPtr[MAX_NUM_ATTRIBUTES * 2];
+    int aLen[MAX_NUM_ATTRIBUTES * 2];
+
+    int i;
+    int nOut = 0;
+    HtmlElementNode *pElem;
+    HtmlAttributes *pAttr;
+
+    pElem = HtmlNodeAsElement(pNode);
+    if (!pElem || !pElem->pAttributes) return 0;
+    pAttr = pElem->pAttributes;
+
+    for (i = 0; i < pAttr->nAttr; i++) {
+        if (0 == stricmp(pAttr->a[i].zName, zAttrName)) break;
+    }
+    if (i == pAttr->nAttr) return 0;
+
+    for (i = 0; i < pAttr->nAttr && nOut < MAX_NUM_ATTRIBUTES; i++) {
+        if (0 == stricmp(pAttr->a[i].zName, zAttrName)) continue;
+        azPtr[nOut*2] = pAttr->a[i].zName;
+        azPtr[nOut*2+1] = pAttr->a[i].zValue;
+        nOut++;
+    }
+    for (i = 0; i < nOut*2; i++) {
+        aLen[i] = strlen(azPtr[i]);
+    }
+
+    /* HtmlAttributesNew() returns NULL for an empty list, which is a
+     * valid value for HtmlElementNode.pAttributes.
+     */
+    pElem->pAttributes = HtmlAttributesNew(nOut*2, azPtr, aLen, 0);
+    HtmlFree(pAttr);
+
+    /* As in setNodeAttribute() - if the "style" attribute was removed,
+     * discard the compiled version at HtmlElementNode.pStyle.
+     */
+    if (stricmp(HTML_INLINE_STYLE_ATTR, zAttrName) == 0) {
+        HtmlCssInlineFree(pElem->pStyle);
+        pElem->pStyle = 0;
+    }
+    return 1;
+}
+
 static void
 mergeAttributes(pNode, pAttr)
     HtmlNode *pNode;
@@ -2395,13 +2464,14 @@ nodeCommand(clientData, interp, objc, objv)
 
     switch (aSubCommand[iChoice].eSymbol) {
         /*
-         * nodeHandle attr ??-default DEFAULT-VALUE? ATTR-NAME? ?NEW-VALUE?
+         * nodeHandle attr ??-default DEFAULT-VALUE|-remove? ATTR-NAME? ?NEW-VALUE?
          */
         case NODE_ATTRIBUTE: {
             char const *zAttr = 0;
             char *zAttrName = 0;
             char *zAttrVal = 0;
             char *zDefault = 0;
+            int isRemove = 0;
 
             switch (objc) {
                 case 2:
@@ -2410,8 +2480,13 @@ nodeCommand(clientData, interp, objc, objv)
                     zAttrName = Tcl_GetString(objv[2]);
                     break;
                 case 4:
-                    zAttrName = Tcl_GetString(objv[2]);
-                    zAttrVal = Tcl_GetString(objv[3]);
+                    if (0 == strcmp(Tcl_GetString(objv[2]), "-remove")) {
+                        isRemove = 1;
+                        zAttrName = Tcl_GetString(objv[3]);
+                    } else {
+                        zAttrName = Tcl_GetString(objv[2]);
+                        zAttrVal = Tcl_GetString(objv[3]);
+                    }
                     break;
                 case 5:
                     if (strcmp(Tcl_GetString(objv[2]), "-default")) {
@@ -2424,8 +2499,20 @@ nodeCommand(clientData, interp, objc, objv)
                     goto node_attr_usage;
             }
 
+            /* $node attribute -remove ATTR-NAME
+             *
+             * Remove the attribute entirely. A no-op if the attribute is
+             * not present. Returns an empty string either way.
+             */
+            if (isRemove) {
+                if (removeNodeAttribute(pNode, zAttrName)) {
+                    HtmlCallbackRestyle(pTree, pNode);
+                }
+                break;
+            }
+
             /* If there are values for both zAttrName and zAttrVal, then
-             * set the value of the attribute to the string pointed to by 
+             * set the value of the attribute to the string pointed to by
              * zAttrVal. After doing this, run the code for an attribute
              * query, so that the new attribute value is returned.
              */
@@ -2483,7 +2570,7 @@ node_attr_usage:
             Tcl_AppendResult(interp, "Usage: ",
                 Tcl_GetString(objv[0]), " ",
                 Tcl_GetString(objv[1]), " ",
-                "? ?-default DEFAULT-VALUE? ATTR-NAME ?NEW-VAL??", NULL);
+                "? ?-default DEFAULT-VALUE|-remove? ATTR-NAME ?NEW-VAL??", NULL);
             return TCL_ERROR;
         }
 
@@ -2620,7 +2707,8 @@ node_attr_usage:
                 case 0:
                     return HtmlNodeProperties(interp, pComputed);
                 case 1:
-                    return HtmlNodeGetProperty(interp, objv[2], pComputed);
+                    /* aArg[0], not objv[2]: it may follow -before/-after */
+                    return HtmlNodeGetProperty(interp, aArg[0], pComputed);
                 default:
                     Tcl_WrongNumArgs(
                         interp, 2, objv,"?-before|-after|-inline? PROPERTY-NAME"

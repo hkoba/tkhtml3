@@ -82,6 +82,12 @@
 #                 distribution, line placement + span, auto
 #                 placement, gap, implicit rows.
 #
+#     modern-19.* <details>/<summary> and [$node attribute -remove]:
+#                 UA rules keyed on the standard "open" attribute,
+#                 runtime toggling via attribute set/remove (both
+#                 restyle), ::before disclosure marker, and the
+#                 ::tkhtml::details_toggle helper.
+#
 # Note: when testing with properties, prefer 'color' - the initial value
 # of e.g. 'border-top-width' is "medium" (2px), which is easy to confuse
 # with a test value.
@@ -1594,5 +1600,115 @@ tcltest::test modern-18.7 {text-only grid falls back to normal flow} -body {
   # normal-flow fallback (same contract as flexbox).
   expr {[lindex [gridbox g] 3] > 0}
 } -result {1}
+
+#--------------------------------------------------------------------------
+# modern-19.*: <details>/<summary> and [$node attribute -remove].
+# Open/closed state is the standard "open" attribute; UA rules in
+# html.css hide non-summary element children of a closed details and
+# add a ::before disclosure marker. Toggling = setting/removing the
+# attribute, both of which schedule a restyle. Click wiring is the
+# host's job (like :hover); ::tkhtml::details_toggle is the helper for
+# it. Known limitation: bare text children of a closed details (not
+# wrapped in any element) stay visible - CSS can only hide elements.
+
+tcltest::test modern-19.0 {details is closed by default} -body {
+  .h reset
+  .h parse -final {<body>
+    <details id="d"><summary id="s">More</summary><p id="p">body</p></details>
+  </body>}
+  list [property [idnode s] display] [property [idnode p] display]
+} -result {block none}
+
+tcltest::test modern-19.1 {details with open attribute shows content} -body {
+  .h reset
+  .h parse -final {<body>
+    <details open id="d"><summary id="s">More</summary><p id="p">body</p></details>
+  </body>}
+  property [idnode p] display
+} -result {block}
+
+tcltest::test modern-19.2 {runtime toggle via attribute set / -remove} -body {
+  .h reset
+  .h parse -final {<body>
+    <details id="d"><summary id="s">More</summary><p id="p">body</p></details>
+  </body>}
+  set d [idnode d]
+  set h0 [lindex [.h bbox $d] 3]
+  $d attribute open ""
+  set r1 [property [idnode p] display]
+  set h1 [lindex [.h bbox $d] 3]
+  $d attribute -remove open
+  set r2 [property [idnode p] display]
+  list $r1 $r2 [expr {$h1 > $h0}]
+} -result {block none 1}
+
+tcltest::test modern-19.3 {attribute -remove unmatches presence selectors} -body {
+  .h reset
+  .h style { p[foo] { color: red } }
+  # Note foo="": a presence selector matches an empty value, which is
+  # why closing a details needs removal, not [attribute open ""].
+  .h parse -final {<body><p id="a" foo="">x</p></body>}
+  set n [idnode a]
+  set r1 [property $n color]
+  $n attribute -remove foo
+  list $r1 [property $n color] [$n attribute -default GONE foo]
+} -result {red black GONE}
+
+tcltest::test modern-19.4 {attribute -remove of absent attribute is a no-op} -body {
+  .h reset
+  .h parse -final {<body><p id="a" keep="1">x</p></body>}
+  set n [idnode a]
+  $n attribute -remove nosuch
+  $n attribute
+} -result {id a keep 1}
+
+tcltest::test modern-19.5 {nested details toggle independently} -body {
+  .h reset
+  .h parse -final {<body>
+    <details open id="o"><summary id="os">outer</summary>
+      <details id="i"><summary id="is">inner</summary><p id="ip">in</p></details>
+      <p id="op">out</p>
+    </details>
+  </body>}
+  list [property [idnode op] display] [property [idnode is] display] \
+      [property [idnode ip] display]
+} -result {block block none}
+
+tcltest::test modern-19.6 {marker :before generated only on details > summary} -body {
+  .h reset
+  .h parse -final {<body>
+    <details id="d"><summary id="s">x</summary></details>
+    <summary id="lone">y</summary>
+  </body>}
+  # [$node property -before PROP] returns the generated element's
+  # computed value, or "" when there is no generated content.
+  list [[idnode s] property -before display] [[idnode lone] property -before]
+} -result {inline {}}
+
+tcltest::test modern-19.7 {::tkhtml::details_toggle round trip and guards} -body {
+  .h reset
+  .h parse -final {<body>
+    <details id="d"><summary id="s">More</summary><p id="p">body</p></details>
+  </body>}
+  set r {}
+  lappend r [::tkhtml::details_toggle [idnode s]]  ;# summary: opens
+  lappend r [property [idnode p] display]
+  lappend r [::tkhtml::details_toggle [lindex [[idnode s] children] 0]]
+  lappend r [property [idnode p] display]          ;# text child: closes
+  lappend r [::tkhtml::details_toggle [idnode d]]  ;# details itself: no-op
+  lappend r [::tkhtml::details_toggle [idnode p]]  ;# content: no-op
+  set r
+} -result {1 block 1 none 0 0}
+
+tcltest::test modern-19.8 {author CSS keyed on details[open] re-matches on toggle} -body {
+  .h reset
+  .h style { details[open] > summary { color: red } }
+  .h parse -final {<body>
+    <details id="d"><summary id="s">x</summary></details>
+  </body>}
+  set r1 [property [idnode s] color]
+  [idnode d] attribute open ""
+  list $r1 [property [idnode s] color]
+} -result {black red}
 
 finish_test
