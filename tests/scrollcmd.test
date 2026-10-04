@@ -1,0 +1,91 @@
+# -*- coding: utf-8; mode: tcl -*-
+
+#---------------------------------------------------------------------
+# Tests for scroll commands (-xscrollcommand/-yscrollcommand) that
+# re-enter the event loop.
+#
+# widget::scrolledwindow (tklib) shows/hides its scrollbars from the
+# scroll command and then runs [update idletasks]. That used to run the
+# widget's own pending idle callback from inside itself, where it
+# returned early; the callback was then never scheduled again although
+# work was still flagged as pending, so every later scroll or redraw
+# request was ignored.
+
+proc sourcefile {file} {
+  set fname [file join [file dirname [info script]] $file]
+  uplevel #0 [list source $fname]
+}
+sourcefile common.tcl
+
+namespace eval scrollcmd {
+    variable shown 0
+    variable long "[string repeat <p>x</p> 200]<p class=cur>here</p>"
+
+    # An auto-hiding scrollbar: grid/remove a bar beside the widget and,
+    # if $reenter, flush the geometry change at once.
+    proc ysc {reenter first last} {
+        variable shown
+        set want [expr {$first > 0 || $last < 1}]
+        if {$want != $shown} {
+            set shown $want
+            if {$want} {
+                grid .sc.bar -row 0 -column 1 -sticky ns
+            } else {
+                grid remove .sc.bar
+            }
+            if {$reenter} {
+                update idletasks
+            }
+        }
+    }
+
+    proc setup {reenter} {
+        variable shown 0
+        destroy .sc
+        wm geometry . 400x300
+        frame .sc
+        pack .sc -fill both -expand 1
+        html .sc.h -yscrollcommand [list [namespace current]::ysc $reenter]
+        frame .sc.bar -width 16
+        grid .sc.h -row 0 -column 0 -sticky news
+        grid rowconfigure .sc 0 -weight 1
+        grid columnconfigure .sc 0 -weight 1
+        update
+    }
+
+    proc top {} {
+        format %.2f [lindex [.sc.h yview] 0]
+    }
+}
+
+foreach {n reenter} {1 0 2 1} {
+    tcltest::test scrollcmd-$n.1 "yview NODE right after parse (reenter=$reenter)" -body {
+        scrollcmd::setup $reenter
+        .sc.h parse -final $scrollcmd::long
+        .sc.h yview [lindex [.sc.h search .cur] 0]
+        update
+        expr {[scrollcmd::top] > 0.9}
+    } -result 1
+
+    tcltest::test scrollcmd-$n.2 "later scroll requests still work" -body {
+        .sc.h yview moveto 0.5
+        update
+        scrollcmd::top
+    } -result 0.50
+
+    tcltest::test scrollcmd-$n.3 "... also after a reload" -body {
+        .sc.h reset
+        .sc.h parse -final $scrollcmd::long
+        .sc.h yview [lindex [.sc.h search .cur] 0]
+        update
+        set res [expr {[scrollcmd::top] > 0.9}]
+        .sc.h yview moveto 0.25
+        update
+        lappend res [scrollcmd::top]
+    } -result {1 0.25}
+}
+
+destroy .sc
+wm geometry . {}
+
+finish_test

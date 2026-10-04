@@ -450,6 +450,11 @@ INSTRUMENTED(runLayoutEngine, HTML_INSTRUMENT_LAYOUT_ENGINE)
 
     assert(pTree->cb.pSnapshot);
 
+    /* The HTML_LAYOUT flag is cleared here, before the scroll scripts
+     * run: a script may request another layout (e.g. by resizing the
+     * widget) and that request must not be wiped out afterwards.
+     */
+    pTree->cb.flags &= ~HTML_LAYOUT;
     if (!pTree->options.enablelayout) return;
 
     pD = pTree->cb.pDamage;
@@ -462,6 +467,44 @@ INSTRUMENTED(runLayoutEngine, HTML_INSTRUMENT_LAYOUT_ENGINE)
     }
 
     doScrollCallback(pTree);
+}
+
+static void callbackHandler(ClientData);
+static void snapshotLayout(HtmlTree *);
+
+/*
+ *---------------------------------------------------------------------------
+ *
+ * callbackReschedule --
+ *
+ *     Called when callbackHandler() is left. The HtmlCallbackXXX()
+ *     functions schedule the idle callback only when HtmlCallback.flags
+ *     goes from zero to non-zero, so "flags!=0" must imply "callback
+ *     scheduled". That does not hold by itself here: the handler may be
+ *     left with work still flagged (a forced run, or requests made by
+ *     the scroll scripts), while the idle callback may already have been
+ *     consumed - a script run from within the handler (-xscrollcommand,
+ *     -yscrollcommand, -imagecmd ...) can enter the event loop, e.g.
+ *     [update idletasks], which runs the pending idle callback as a
+ *     no-op because HtmlCallback.inProgress is set. Without this the
+ *     widget would never update itself again.
+ *
+ * Results:
+ *     None.
+ *
+ * Side effects:
+ *     (Re)schedules callbackHandler() if any work is pending.
+ *
+ *---------------------------------------------------------------------------
+ */
+static void 
+callbackReschedule(pTree)
+    HtmlTree *pTree;
+{
+    if (pTree->cb.flags) {
+        Tcl_CancelIdleCall(callbackHandler, (ClientData)pTree);
+        Tcl_DoWhenIdle(callbackHandler, (ClientData)pTree);
+    }
 }
 
 /*
@@ -495,6 +538,7 @@ INSTRUMENTED(callbackHandler, HTML_INSTRUMENT_CALLBACK)
 
     int offscreen;
     int force_redraw = 0;
+    int doScroll;
 
     assert(
         !pTree->pRoot ||
@@ -556,9 +600,9 @@ INSTRUMENTED(callbackHandler, HTML_INSTRUMENT_CALLBACK)
      */
     assert(pTree->cb.pDamage == 0 || pTree->cb.flags & HTML_DAMAGE);
     if (pTree->cb.flags & HTML_LAYOUT) {
+        /* Clears HTML_LAYOUT itself, see there. */
         runLayoutEngine(clientData);
     }
-    pTree->cb.flags &= ~HTML_LAYOUT;
 
     if (pTree->cb.pSnapshot) {
         HtmlCanvasSnapshot *pSnapshot = 0;
@@ -566,11 +610,21 @@ INSTRUMENTED(callbackHandler, HTML_INSTRUMENT_CALLBACK)
         HtmlDrawSnapshotFree(pTree, pTree->cb.pSnapshot);
         HtmlDrawSnapshotFree(pTree, pSnapshot);
         pTree->cb.pSnapshot = 0;
+
+        /* A scroll script run by the layout engine may have requested
+         * another restyle or layout. Those requests were made while the
+         * snapshot just consumed was still in place, so they did not
+         * take one (see snapshotLayout()); do that for them now.
+         */
+        if (pTree->cb.flags & (HTML_RESTYLE|HTML_LAYOUT)) {
+            snapshotLayout(pTree);
+        }
     }
 
     if (pTree->cb.isForce) {
         assert(pTree->cb.inProgress);
         pTree->cb.inProgress = 0;
+        callbackReschedule(pTree);
         return;
     }
 
@@ -610,18 +664,25 @@ INSTRUMENTED(callbackHandler, HTML_INSTRUMENT_CALLBACK)
         HtmlLog(pTree, "TIMING", "SetViewport: clicks=%d", scrollClock);
     }
 
-    if (pTree->cb.flags & (HTML_SCROLL)) {
+    /* Everything requested so far has been handled, except for the
+     * restyle/layout work a scroll script run by the layout engine may
+     * have asked for (those flags are cleared before their step runs).
+     * The flags are reset before the scroll scripts are invoked, not
+     * after, so that requests made by the scripts survive too.
+     */
+    doScroll = (pTree->cb.flags & HTML_SCROLL);
+    pTree->cb.flags &= (HTML_DYNAMIC|HTML_RESTYLE|HTML_LAYOUT);
+    if (doScroll) {
         doScrollCallback(pTree);
     }
 
-    pTree->cb.flags = 0;
     assert(pTree->cb.inProgress);
     pTree->cb.inProgress = 0;
 
     if (pTree->cb.pDamage) {
-        pTree->cb.flags = HTML_DAMAGE;
-        Tcl_DoWhenIdle(callbackHandler, (ClientData)pTree);
+        pTree->cb.flags |= HTML_DAMAGE;
     }
+    callbackReschedule(pTree);
 
     offscreen = MAX(0, 
         MIN(pTree->canvas.bottom - Tk_Height(pTree->tkwin), pTree->iScrollY)

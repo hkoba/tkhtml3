@@ -12,6 +12,7 @@ sourcefile options.test
 sourcefile css3.test
 sourcefile modern.test
 sourcefile bootstrap5.test
+sourcefile scrollcmd.test
 
 finish_test
 

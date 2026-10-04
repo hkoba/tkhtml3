@@ -80,3 +80,18 @@ render). This is exactly the chain the Acid2 eyes depend on:
 * Form controls: the widget renders nothing for them; hosts replace
   the nodes with real Tk widgets via `$node replace` (minhtmltk0's
   form.tcl is the reference).
+
+## Scripts called from the update callback
+
+`-xscrollcommand`/`-yscrollcommand` (and `-imagecmd`, replaced-node
+`-configurecmd` ...) run from inside the widget's idle callback
+(`callbackHandler()` in htmltcl.c). They may request further work
+(resize the widget, scroll): such requests are kept and handled in a
+following idle round. They may even enter the event loop
+(`update idletasks`, as tklib's `widget::scrolledwindow` does to
+auto-hide its scrollbars); before the fix covered by
+`tests/scrollcmd.test` that left the widget permanently unable to
+scroll or repaint, because its pending idle callback was consumed as a
+no-op while work was still flagged. It is still better not to: layout
+queries (`bbox`, `yview`) made from such a script see the state of the
+update in progress.
